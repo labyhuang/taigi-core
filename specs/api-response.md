@@ -83,6 +83,14 @@ export interface ApiErrorResponse {
 | `ERR_GROUP_CHILD_NO_INDEPENDENT_STATUS` | 400 | 子題不可獨立變更狀態，須透過父題操作 |
 | `ERR_MEDIA_IN_USE` | 409 | 素材仍被題目使用中，無法刪除 |
 
+### 測驗組卷類
+
+| Error Code | HTTP Status | 說明 |
+|------------|-------------|------|
+| `ERR_BLUEPRINT_CELL_MISMATCH` | 400 | 條件格的題數/配分總和與藍圖預期的 `totalQuestions`/`totalScore` 不符 |
+| `ERR_PAPER_ALREADY_PUBLISHED` | 403 | 已發布的考卷不可再修改或刪除 |
+| `ERR_QUESTION_ALREADY_IN_PAPER` | 409 | 替換的目標題目已存在於該考卷中 |
+
 ### 伺服器類
 
 | Error Code | HTTP Status | 說明 |

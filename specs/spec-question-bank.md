@@ -68,6 +68,7 @@ APPROVED / REJECTED ──► ARCHIVED  (Admin 封存)
   * **先選擇考試類型 (category)**：GTPT 或 TSH。
   * 依據所選 category，選擇對應的主類型 (type) 與子類型 (subType)，前端表單依據選擇動態變形。
   * 選擇拼音系統 (`TJ` 教育部 / `POJ` 白話字)。
+  * **設定屬性標籤 (Attributes)：** 前端在選擇 category 後呼叫 `GET /api/attributes?examCategory=XXX`，取得該考試類型適用的屬性定義，動態渲染屬性選擇區塊。每個屬性渲染為 `<Select>` 下拉選單，選項來自 `AttributeValue`。`isRequired = true` 的屬性（如「困難度」）以紅色星號標記為必填。草稿儲存時屬性為選填，送審時必填屬性須已填入。
   * 填寫題幹、選項、上傳音檔或圖片。
   * 若題型需媒體(音檔/圖片)，前端先呼叫 `POST /api/media`，取得 `mediaId`。
   * 填寫表單後點擊「儲存草稿」。此時前端**僅做最寬鬆的驗證** (如題型必填)，API 將試題狀態設為 `DRAFT`。
@@ -238,6 +239,7 @@ model Question {
   // 動態 JSONB 欄位
   content        Json?             // 題目內容/選項 (對應 QuestionContent TypeBox Schema)
   answer         Json?             // 解答與評分標準 (對應 QuestionAnswer TypeBox Schema)
+  attributes     Json              @default("{}")  // 動態維度標籤 (參照 AttributeDefinition)
 
   // 題組關聯 (Self-reference)
   isGroupParent  Boolean           @default(false) // 題組父題標記
@@ -317,6 +319,37 @@ model QuestionMedia {
   @@id([questionId, mediaId])
   @@map("question_media")
 }
+
+// --- 動態屬性定義 (管理 Question.attributes 的合法維度與值) ---
+model AttributeDefinition {
+  id             String            @id @default(uuid())
+  key            String            @unique   // e.g., "difficulty"
+  name           String                      // 顯示名稱, e.g., "困難度"
+  description    String?
+  examCategory   ExamCategory?               // null = 適用所有考試類型
+  isRequired     Boolean           @default(false)
+
+  values         AttributeValue[]
+
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@map("attribute_definitions")
+}
+
+model AttributeValue {
+  id              String              @id @default(uuid())
+  attributeId     String
+  value           String              // e.g., "HIGH"
+  label           String              // 顯示標籤, e.g., "高"
+  orderIndex      Int                 // 排序
+
+  attribute       AttributeDefinition @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@unique([attributeId, value])
+  @@index([attributeId])
+  @@map("attribute_values")
+}
 ```
 
 **注意事項：**
@@ -325,10 +358,41 @@ model QuestionMedia {
 - `User` model 需在 `spec-01.md` 的 schema 中補充對應的反向關聯欄位（`questionsAuthored`、`questionsReviewed`、`reviewLogs`、`mediaUploads`）。
 - 題組子題的 `status` **跟隨父題**：對父題執行狀態變更時，後端須同步更新所有 `groupId` 指向該父題的子題狀態。子題不可獨立執行狀態變更。
 - **`category` 為建立後不可變更的欄位**，不允許在 `PATCH /api/questions/:id` 時修改 category。
+- **`attributes`** 欄位為 JSONB，其合法的 key 與 value 由 `AttributeDefinition` / `AttributeValue` 表定義。建立或更新題目時，後端須驗證 `attributes` 中的每個 key 都存在於 `AttributeDefinition` 中，且 value 為該 key 的合法值。
+
+### 2.1 屬性定義 Seed 資料 (Attribute Definitions Seed)
+
+系統初始化時須透過 `seed.ts` 建立以下預設屬性定義：
+
+| key | name | examCategory | isRequired | 合法值 |
+|-----|------|-------------|------------|------|
+| `difficulty` | 困難度 | `null`（全部適用） | `true` | `HIGH`(高) / `MEDIUM`(中) / `LOW`(低) |
+
+Seed 範例：
+
+```typescript
+const ATTRIBUTE_DEFINITIONS = [
+  {
+    key: 'difficulty',
+    name: '困難度',
+    examCategory: null,
+    isRequired: true,
+    values: [
+      { value: 'HIGH', label: '高', orderIndex: 1 },
+      { value: 'MEDIUM', label: '中', orderIndex: 2 },
+      { value: 'LOW', label: '低', orderIndex: 3 },
+    ],
+  },
+] as const
+```
+
+未來可透過管理介面或直接新增 seed 來擴充屬性維度（如「主題」、「認知層次」等）。
 
 ### 3. 送審驗證規則矩陣 (Submit Validation Rules)
 
 當執行 `SUBMIT` 動作時，後端必須依據 `subType` 進行嚴格驗證。草稿 (`DRAFT`) 儲存時僅驗證 `category`、`type`、`subType`、`textSystem` 必填。
+
+**屬性驗證（所有題型通用）：** 送審時，後端須檢查 `attributes` 中所有 `isRequired = true` 的 `AttributeDefinition`（依題目的 `category` 篩選適用屬性）是否已填入合法值。未填入必填屬性時回傳 `ERR_VALIDATION`，details 中說明缺少哪些屬性。
 
 #### GTPT 送審驗證
 
@@ -464,6 +528,7 @@ export const QuestionAnswerSchema = Type.Union([
     "stem": "題幹文字 (選填)",
     "content": { "options": [{ "id": "x1a2", "text": "選項A" }, { "id": "y3b4", "text": "選項B" }] },
     "answer": { "correctOptionIds": ["x1a2"] },
+    "attributes": { "difficulty": "MEDIUM" },
     "mediaIds": [{ "mediaId": "uuid", "purpose": "AUDIO" }]
   }
   ```
@@ -499,7 +564,7 @@ export const QuestionAnswerSchema = Type.Union([
   * `REVIEWER`：自動附加 `status = PENDING`，僅能看到待審題目。
   * `ADMIN`：無額外限制。
 
-* **Response data:** 題目陣列，每筆包含 `id`, `category`, `type`, `subType`, `textSystem`, `stem`, `status`, `isGroupParent`, `author` (`{ id, name }`), `createdAt`, `updatedAt`。
+* **Response data:** 題目陣列，每筆包含 `id`, `category`, `type`, `subType`, `textSystem`, `stem`, `status`, `attributes`, `isGroupParent`, `author` (`{ id, name }`), `createdAt`, `updatedAt`。
 
 * **Response meta:** 依 `PaginationMeta` 格式提供分頁資訊。
 
@@ -507,7 +572,7 @@ export const QuestionAnswerSchema = Type.Union([
 
 * **權限:** `question:read`（AUTHOR 僅能查看自己的題目，REVIEWER 僅能查看 `PENDING` 狀態）
 * **Response data:**
-  * 題目完整資訊：`id`, `category`, `type`, `subType`, `textSystem`, `stem`, `status`, `content`, `answer`, `isGroupParent`, `groupId`
+  * 題目完整資訊：`id`, `category`, `type`, `subType`, `textSystem`, `stem`, `status`, `content`, `answer`, `attributes`, `isGroupParent`, `groupId`
   * 關聯媒體：`media[]`（含 `id`, `filename`, `mimeType`, `durationSeconds`, `purpose`）
   * 作者資訊：`author` (`{ id, name }`)
   * 審查歷程：`reviewLogs[]`（含 `id`, `action`, `comment`, `user` (`{ id, name }`), `createdAt`）
@@ -596,6 +661,84 @@ export const QuestionAnswerSchema = Type.Union([
 * **權限:** `media:delete`
 * **邏輯:** 檢查是否仍有題目關聯（`QuestionMedia`），若有則回傳 `ERR_VALIDATION`（因為 `onDelete: Restrict`）。無關聯時刪除雲端檔案與資料庫記錄。
 * **Response:** `{ success: true, data: null, message: "素材已刪除" }`
+
+### 4. 屬性定義 (Attribute Definitions)
+
+#### 4.1 查詢屬性定義列表 `GET /api/attributes`
+
+* **權限:** `question:read`
+* **Query Parameters:**
+
+  | 參數 | 類型 | 預設 | 說明 |
+  |------|------|------|------|
+  | `examCategory` | string | — | 篩選適用的考試類型（回傳 `examCategory = 指定值` 或 `examCategory = null` 的屬性） |
+
+* **邏輯:** 回傳所有屬性定義，每筆包含其合法值列表（依 `orderIndex` 排序）。若傳入 `examCategory`，僅回傳該類型適用的屬性（`examCategory` 為 null 或等於指定值的）。
+* **Response:**
+
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": "uuid",
+        "key": "difficulty",
+        "name": "困難度",
+        "description": null,
+        "examCategory": null,
+        "isRequired": true,
+        "values": [
+          { "id": "uuid", "value": "HIGH", "label": "高", "orderIndex": 1 },
+          { "id": "uuid", "value": "MEDIUM", "label": "中", "orderIndex": 2 },
+          { "id": "uuid", "value": "LOW", "label": "低", "orderIndex": 3 }
+        ]
+      }
+    ]
+  }
+  ```
+
+#### 4.2 取得屬性定義詳情 `GET /api/attributes/:id`
+
+* **權限:** `question:read`
+* **Response:** 單一屬性定義完整資訊（含 values 列表）。
+
+#### 4.3 建立屬性定義 `POST /api/attributes`
+
+* **權限:** `system:manage`
+* **Request Body:**
+
+  ```json
+  {
+    "key": "topic",
+    "name": "主題",
+    "description": "題目的主題分類",
+    "examCategory": "TSH",
+    "isRequired": false,
+    "values": [
+      { "value": "DAILY_LIFE", "label": "生活對話", "orderIndex": 1 },
+      { "value": "CULTURE", "label": "文化", "orderIndex": 2 }
+    ]
+  }
+  ```
+
+* **驗證規則:**
+  * `key` 必填且唯一，僅允許小寫英文、數字與底線 (`/^[a-z][a-z0-9_]*$/`)。
+  * `name` 必填。
+  * `values` 至少 1 個，每個 value 的 `value` 在同一屬性內唯一。
+* **Response:** 建立後的屬性定義完整資訊。
+
+#### 4.4 更新屬性定義 `PATCH /api/attributes/:id`
+
+* **權限:** `system:manage`
+* **Request Body:** 與建立相同結構，所有欄位選填。若傳入 `values`，採用**全量取代**策略。
+* **注意:** `key` 修改後，已存在題目的 `attributes` JSONB 中的舊 key 不會自動更新，需謹慎操作。
+* **Response:** 更新後的屬性定義完整資訊。
+
+#### 4.5 刪除屬性定義 `DELETE /api/attributes/:id`
+
+* **權限:** `system:manage`
+* **邏輯:** 刪除屬性定義及其所有合法值（`onDelete: Cascade`）。已存在題目的 `attributes` JSONB 中的對應 key-value 不會自動清除。
+* **Response:** `{ success: true, data: null, message: "屬性定義已刪除" }`
 
 ---
 
