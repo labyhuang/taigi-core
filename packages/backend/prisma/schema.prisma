@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- 使用者與驗證 ---
+model User {
+  id                  String     @id @default(uuid())
+  email               String     @unique
+  name                String?
+  passwordHash        String?
+  isActive            Boolean    @default(true)
+
+  // 邀請註冊專用欄位
+  invitedBy           String?
+  setupToken          String?    @unique
+  setupTokenExpiresAt DateTime?
+  isSetupCompleted    Boolean    @default(false)
+
+  // 2FA (TOTP) — AES-256-GCM 加密後儲存
+  twoFactorEncrypted  String?
+  isTwoFactorEnabled  Boolean    @default(false)
+
+  // 關聯
+  roles               UserRole[]
+  questionsAuthored   Question[]          @relation("QuestionAuthor")
+  questionsReviewed   Question[]          @relation("QuestionReviewer")
+  reviewLogs          QuestionReviewLog[] @relation("ReviewLogUser")
+  mediaUploads        Media[]             @relation("MediaUploader")
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@map("users")
+}
+
+// --- 嚴格 RBAC 架構 ---
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  action      String           @unique
+  description String?
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+  assignedBy String?
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// =============================================
+// 題庫管理模組 (Question Bank Module)
+// =============================================
+
+enum QuestionStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+
+  @@map("question_status")
+}
+
+enum ReviewAction {
+  SUBMIT
+  APPROVE
+  REJECT
+  ARCHIVE
+
+  @@map("review_action")
+}
+
+enum QuestionType {
+  READING
+  LISTENING
+  SPEAKING
+  DICTATION
+
+  @@map("question_type")
+}
+
+enum QuestionSubType {
+  GRAMMAR
+  COMPREHENSION
+  CONVERSATION
+  SPEECH
+  STORYTELLING
+  READ_ALOUD
+  EXPRESSION
+  DICTATION_FILL
+
+  @@map("question_sub_type")
+}
+
+enum TextSystem {
+  TJ
+  POJ
+
+  @@map("text_system")
+}
+
+model Question {
+  id             String            @id @default(uuid())
+  type           QuestionType
+  subType        QuestionSubType
+  textSystem     TextSystem
+  stem           String?
+  status         QuestionStatus    @default(DRAFT)
+
+  content        Json?
+  answer         Json?
+
+  // 題組關聯 (Self-reference)
+  isGroupParent  Boolean           @default(false)
+  groupId        String?
+  parent         Question?         @relation("QuestionGroup", fields: [groupId], references: [id])
+  children       Question[]        @relation("QuestionGroup")
+
+  // 使用者關聯
+  authorId       String
+  author         User              @relation("QuestionAuthor", fields: [authorId], references: [id])
+  lastReviewerId String?
+  lastReviewer   User?             @relation("QuestionReviewer", fields: [lastReviewerId], references: [id])
+
+  // 媒體關聯
+  questionMedia  QuestionMedia[]
+
+  // 審核歷程
+  reviewLogs     QuestionReviewLog[]
+
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@map("questions")
+}
+
+model QuestionReviewLog {
+  id             String            @id @default(uuid())
+  questionId     String
+  userId         String
+
+  action         ReviewAction
+  comment        String?
+
+  createdAt      DateTime          @default(now())
+
+  question       Question          @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user           User              @relation("ReviewLogUser", fields: [userId], references: [id])
+
+  @@map("question_review_logs")
+}
+
+model Media {
+  id               String          @id @default(uuid())
+  filename         String
+  objectKey        String
+  mimeType         String
+  sizeBytes        Int
+
+  durationSeconds  Float?
+  transcript       String?         @db.Text
+
+  uploaderId       String
+  uploader         User            @relation("MediaUploader", fields: [uploaderId], references: [id])
+  questions        QuestionMedia[]
+
+  createdAt        DateTime        @default(now())
+
+  @@map("media")
+}
+
+model QuestionMedia {
+  questionId       String
+  mediaId          String
+
+  purpose          String
+
+  question         Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  media            Media           @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@id([questionId, mediaId])
+  @@map("question_media")
+}

@@ -1,0 +1,37 @@
+# 開發環境用：PostgreSQL + Redis
+# 使用方式：docker compose -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: taigi-core-postgres
+    environment:
+      POSTGRES_USER: tc
+      POSTGRES_PASSWORD: tc
+      POSTGRES_DB: taigi_core
+    ports:
+      - "5432:5432"
+    volumes:
+      - tc_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tc -d taigi_core"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: taigi-core-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - tc_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  tc_postgres_data:
+  tc_redis_data:

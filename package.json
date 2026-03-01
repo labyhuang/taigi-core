@@ -1,0 +1,22 @@
+{
+  "name": "taigi-core",
+  "version": "0.1.0",
+  "description": "台語檢定題庫管理系統",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @taigi-core/backend dev & pnpm --filter @taigi-core/frontend dev",
+    "dev:backend": "pnpm --filter @taigi-core/backend dev",
+    "dev:frontend": "pnpm --filter @taigi-core/frontend dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @taigi-core/backend db:generate",
+    "db:migrate": "pnpm --filter @taigi-core/backend db:migrate",
+    "db:seed": "pnpm --filter @taigi-core/backend db:seed",
+    "db:studio": "pnpm --filter @taigi-core/backend db:studio"
+  },
+  "license": "UNLICENSED"
+}

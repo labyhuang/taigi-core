@@ -1,0 +1,31 @@
+{
+  "name": "@taigi-core/frontend",
+  "version": "0.1.0",
+  "description": "台語檢定題庫管理系統前端",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.1.0",
+    "@taigi-core/shared": "workspace:*",
+    "antd": "^5.x",
+    "axios": "^1.x",
+    "qrcode.react": "^4.x",
+    "react": "^19.x",
+    "react-dom": "^19.x",
+    "react-router-dom": "^7.x",
+    "zustand": "^5.x"
+  },
+  "devDependencies": {
+    "@types/react": "^19.x",
+    "@types/react-dom": "^19.x",
+    "@vitejs/plugin-react-swc": "^4.x",
+    "typescript": "^5.9.x",
+    "vite": "^6.x"
+  }
+}
