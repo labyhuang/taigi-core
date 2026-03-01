@@ -11,9 +11,10 @@ import {
   SUB_TYPE_LABELS,
   STATUS_LABELS,
   STATUS_COLORS,
-  QuestionType,
+  CATEGORY_LABELS,
+  ExamCategory,
   QuestionStatus,
-  VALID_TYPE_SUBTYPE_MAP,
+  VALID_CATEGORY_TYPE_SUBTYPE_MAP,
   type QuestionListItem,
 } from './types'
 
@@ -36,7 +37,7 @@ export default function QuestionList() {
   const [pagination, setPagination] = useState<PaginationMeta>({ total: 0, page: 1, pageSize: 20, totalPages: 0 })
   const [loading, setLoading] = useState(false)
 
-  // 篩選器
+  const [filterCategory, setFilterCategory] = useState<string | undefined>()
   const [filterStatus, setFilterStatus] = useState<string | undefined>()
   const [filterType, setFilterType] = useState<string | undefined>()
   const [filterSubType, setFilterSubType] = useState<string | undefined>()
@@ -45,6 +46,7 @@ export default function QuestionList() {
     setLoading(true)
     try {
       const params: Record<string, unknown> = { page, pageSize }
+      if (filterCategory) params.category = filterCategory
       if (filterStatus) params.status = filterStatus
       if (filterType) params.type = filterType
       if (filterSubType) params.subType = filterSubType
@@ -57,7 +59,7 @@ export default function QuestionList() {
     } finally {
       setLoading(false)
     }
-  }, [filterStatus, filterType, filterSubType])
+  }, [filterCategory, filterStatus, filterType, filterSubType])
 
   useEffect(() => {
     void fetchQuestions()
@@ -67,11 +69,36 @@ export default function QuestionList() {
     void fetchQuestions(pag.current ?? 1, pag.pageSize ?? 20)
   }
 
-  const subTypeOptions = filterType
-    ? (VALID_TYPE_SUBTYPE_MAP[filterType] ?? []).map((st) => ({ label: SUB_TYPE_LABELS[st] ?? st, value: st }))
-    : Object.entries(SUB_TYPE_LABELS).map(([value, label]) => ({ label, value }))
+  // 依據 category 篩選可用的 type 選項
+  const typeOptions = filterCategory
+    ? Object.keys(VALID_CATEGORY_TYPE_SUBTYPE_MAP[filterCategory] ?? {}).map((t) => ({ label: TYPE_LABELS[t] ?? t, value: t }))
+    : Object.entries(TYPE_LABELS).map(([value, label]) => ({ label, value }))
+
+  // 依據 category + type 篩選可用的 subType 選項
+  const subTypeOptions = (() => {
+    if (filterCategory && filterType) {
+      const subs = VALID_CATEGORY_TYPE_SUBTYPE_MAP[filterCategory]?.[filterType] ?? []
+      return subs.map((st) => ({ label: SUB_TYPE_LABELS[st] ?? st, value: st }))
+    }
+    if (filterType) {
+      const allSubs = Object.values(VALID_CATEGORY_TYPE_SUBTYPE_MAP).flatMap(
+        (typeMap) => typeMap[filterType] ?? [],
+      )
+      const unique = [...new Set(allSubs)]
+      return unique.map((st) => ({ label: SUB_TYPE_LABELS[st] ?? st, value: st }))
+    }
+    return Object.entries(SUB_TYPE_LABELS).map(([value, label]) => ({ label, value }))
+  })()
 
   const columns: TableProps<QuestionListItem>['columns'] = [
+    {
+      title: '考試類型',
+      dataIndex: 'category',
+      width: 130,
+      render: (cat: string) => (
+        <Tag color={cat === 'TSH' ? 'orange' : 'blue'}>{CATEGORY_LABELS[cat] ?? cat}</Tag>
+      ),
+    },
     {
       title: '題型',
       dataIndex: 'type',
@@ -129,6 +156,21 @@ export default function QuestionList() {
       <Space wrap style={{ marginBottom: 16 }}>
         <Select
           allowClear
+          placeholder="考試類型"
+          style={{ width: 160 }}
+          value={filterCategory}
+          onChange={(v) => {
+            setFilterCategory(v)
+            setFilterType(undefined)
+            setFilterSubType(undefined)
+          }}
+          options={Object.values(ExamCategory).map((c) => ({
+            label: CATEGORY_LABELS[c],
+            value: c,
+          }))}
+        />
+        <Select
+          allowClear
           placeholder="篩選狀態"
           style={{ width: 140 }}
           value={filterStatus}
@@ -147,10 +189,7 @@ export default function QuestionList() {
             setFilterType(v)
             setFilterSubType(undefined)
           }}
-          options={Object.values(QuestionType).map((t) => ({
-            label: TYPE_LABELS[t],
-            value: t,
-          }))}
+          options={typeOptions}
         />
         <Select
           allowClear

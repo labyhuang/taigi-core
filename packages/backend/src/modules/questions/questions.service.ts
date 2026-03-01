@@ -3,10 +3,11 @@ import { QuestionStatus, ReviewAction } from '../../generated/prisma/index.js'
 import { AppError } from '../../utils/errors.js'
 import { ErrorCode } from '../../types/response.js'
 import {
-  VALID_TYPE_SUBTYPE_MAP,
+  VALID_CATEGORY_TYPE_SUBTYPE_MAP,
   AUDIO_REQUIRED_SUBTYPES,
   IMAGE_REQUIRED_SUBTYPES,
   MULTIPLE_CHOICE_SUBTYPES,
+  IMAGE_OPTION_SUBTYPES,
   GROUP_SUBTYPES,
   TRANSCRIPT_REQUIRED_SUBTYPES,
   STEM_REQUIRED_SUBTYPES,
@@ -36,11 +37,16 @@ const VALID_TRANSITIONS: Record<string, { target: QuestionStatus; action: Review
 
 // ========== 驗證工具 ==========
 
-export function validateTypeSubTypeCombination(type: string, subType: string): void {
-  const allowed = VALID_TYPE_SUBTYPE_MAP[type]
+export function validateCategoryTypeSubType(category: string, type: string, subType: string): void {
+  const typeMap = VALID_CATEGORY_TYPE_SUBTYPE_MAP[category]
+  if (!typeMap) {
+    throw new AppError(400, ErrorCode.INVALID_TYPE_COMBINATION,
+      `不合法的考試類型: ${category}`)
+  }
+  const allowed = typeMap[type]
   if (!allowed || !allowed.includes(subType)) {
     throw new AppError(400, ErrorCode.INVALID_TYPE_COMBINATION,
-      `不合法的 type/subType 組合: ${type}/${subType}`)
+      `不合法的 category/type/subType 組合: ${category}/${type}/${subType}`)
   }
 }
 
@@ -81,7 +87,7 @@ function validateSubmitStrict(
     }
   }
 
-  // 驗證圖片
+  // 驗證題幹圖片
   if (IMAGE_REQUIRED_SUBTYPES.includes(subType)) {
     const hasImage = mediaList.some((m) => m.purpose === 'IMAGE')
     if (!hasImage) {
@@ -89,7 +95,33 @@ function validateSubmitStrict(
     }
   }
 
-  // 驗證選擇題選項
+  // IMAGE_PICK_ANSWER 需同時有 AUDIO + IMAGE
+  if (subType === 'IMAGE_PICK_ANSWER') {
+    const hasAudio = mediaList.some((m) => m.purpose === 'AUDIO')
+    const hasImage = mediaList.some((m) => m.purpose === 'IMAGE')
+    if (!hasAudio || !hasImage) {
+      throw new AppError(400, ErrorCode.MEDIA_REQUIRED, '看圖揀話題型需同時上傳音檔和圖片')
+    }
+  }
+
+  // 驗證圖片選項 (LISTEN_PICK_IMAGE)
+  if (IMAGE_OPTION_SUBTYPES.includes(subType)) {
+    const contentObj = content as { options?: { id: string; mediaId?: string }[] } | null
+    if (!contentObj?.options || contentObj.options.length !== 4) {
+      throw new AppError(400, ErrorCode.VALIDATION, '送審時圖片選項數量必須恰好為 4 個')
+    }
+    for (const opt of contentObj.options) {
+      if (!opt.mediaId) {
+        throw new AppError(400, ErrorCode.MEDIA_REQUIRED, '聽話揀圖的每個選項皆須有圖片 (mediaId)')
+      }
+    }
+    const answerObj = answer as { correctOptionIds?: string[] } | null
+    if (!answerObj?.correctOptionIds || answerObj.correctOptionIds.length !== 1) {
+      throw new AppError(400, ErrorCode.VALIDATION, '必須設定恰好 1 個正確答案')
+    }
+  }
+
+  // 驗證文字選擇題選項
   if (MULTIPLE_CHOICE_SUBTYPES.includes(subType)) {
     const contentObj = content as { options?: { id: string; text: string }[] } | null
     if (!contentObj?.options || contentObj.options.length !== 4) {
@@ -99,7 +131,6 @@ function validateSubmitStrict(
     if (!answerObj?.correctOptionIds || answerObj.correctOptionIds.length !== 1) {
       throw new AppError(400, ErrorCode.VALIDATION, '必須設定恰好 1 個正確答案')
     }
-    // 驗證 transcript
     if (TRANSCRIPT_REQUIRED_SUBTYPES.includes(subType)) {
       if (!answerObj.transcript || answerObj.transcript.trim().length === 0) {
         throw new AppError(400, ErrorCode.VALIDATION, '此題型的逐字稿 (transcript) 為必填')
@@ -128,6 +159,7 @@ function validateSubmitStrict(
 
 const questionListSelect = {
   id: true,
+  category: true,
   type: true,
   subType: true,
   textSystem: true,
@@ -141,6 +173,7 @@ const questionListSelect = {
 
 const questionDetailSelect = {
   id: true,
+  category: true,
   type: true,
   subType: true,
   textSystem: true,
@@ -195,11 +228,10 @@ export async function createQuestion(
   body: CreateQuestionBodyType,
   authorId: string,
 ) {
-  validateTypeSubTypeCombination(body.type, body.subType)
+  validateCategoryTypeSubType(body.category, body.type, body.subType)
 
   const isGroupParent = GROUP_SUBTYPES.includes(body.subType) && !body.groupId
 
-  // 如果指定了 groupId，驗證父題存在
   if (body.groupId) {
     const parent = await prisma.question.findUnique({ where: { id: body.groupId } })
     if (!parent) {
@@ -212,6 +244,7 @@ export async function createQuestion(
 
   const question = await prisma.question.create({
     data: {
+      category: body.category as any,
       type: body.type as any,
       subType: body.subType as any,
       textSystem: body.textSystem as any,
@@ -247,7 +280,6 @@ export async function listQuestions(
 
   const where: Prisma.QuestionWhereInput = {}
 
-  // 角色層級篩選
   const permissions = sessionUser.permissions
   const isAdmin = permissions.includes('system:manage')
   const isReviewer = permissions.includes('question:approve')
@@ -261,7 +293,7 @@ export async function listQuestions(
     where.authorId = sessionUser.id
   }
 
-  // 使用者指定的篩選條件
+  if (query.category) where.category = query.category as any
   if (query.status) {
     const statuses = query.status.split(',') as QuestionStatus[]
     where.status = { in: statuses }
@@ -271,7 +303,6 @@ export async function listQuestions(
   if (query.groupId) where.groupId = query.groupId
   if (query.authorId) where.authorId = query.authorId
 
-  // 預設只顯示非子題（頂層題目 + 獨立題目），除非指定了 groupId
   if (!query.groupId) {
     where.groupId = null
   }
@@ -316,7 +347,7 @@ export async function updateQuestion(
 ) {
   const question = await prisma.question.findUnique({
     where: { id },
-    select: { id: true, status: true, authorId: true },
+    select: { id: true, status: true, authorId: true, category: true, type: true, subType: true },
   })
   if (!question) {
     throw new AppError(404, ErrorCode.NOT_FOUND, '題目不存在')
@@ -324,7 +355,6 @@ export async function updateQuestion(
 
   const isAdmin = sessionUser.permissions.includes('system:manage')
 
-  // AUTHOR 僅能編輯 DRAFT 或 REJECTED 且為自己建立的題目
   if (!isAdmin) {
     if (question.authorId !== sessionUser.id) {
       throw new AppError(403, ErrorCode.FORBIDDEN, '您只能編輯自己建立的題目')
@@ -334,12 +364,20 @@ export async function updateQuestion(
     }
   }
 
+  // 若更新了 type 或 subType，驗證組合合法性（category 不可變更）
+  const finalType = body.type ?? question.type
+  const finalSubType = body.subType ?? question.subType
+  if (body.type || body.subType) {
+    validateCategoryTypeSubType(question.category, finalType, finalSubType)
+  }
+
   const updateData: Prisma.QuestionUpdateInput = {}
+  if (body.type !== undefined) updateData.type = body.type as any
+  if (body.subType !== undefined) updateData.subType = body.subType as any
   if (body.stem !== undefined) updateData.stem = body.stem
   if (body.content !== undefined) updateData.content = body.content
   if (body.answer !== undefined) updateData.answer = body.answer
 
-  // 若有更新媒體關聯，先刪除再重建
   if (body.mediaIds) {
     await prisma.questionMedia.deleteMany({ where: { questionId: id } })
     if (body.mediaIds.length > 0) {
@@ -381,7 +419,6 @@ export async function deleteQuestion(
     throw new AppError(403, ErrorCode.QUESTION_READONLY, '僅草稿狀態的題目可以刪除')
   }
 
-  // 題組父題：同步刪除所有子題（Cascade 會處理 QuestionMedia 與 ReviewLog）
   if (question.isGroupParent) {
     await prisma.question.deleteMany({ where: { groupId: id } })
   }
@@ -406,19 +443,16 @@ export async function updateQuestionStatus(
     throw new AppError(404, ErrorCode.NOT_FOUND, '題目不存在')
   }
 
-  // 子題不可獨立變更狀態
   if (question.groupId) {
     throw new AppError(400, ErrorCode.GROUP_CHILD_NO_INDEPENDENT_STATUS,
       '子題不可獨立變更狀態，須透過父題操作')
   }
 
-  // 驗證 action 是否為合法的 ReviewAction
   const reviewAction = action as ReviewAction
   if (!Object.values(ReviewAction).includes(reviewAction)) {
     throw new AppError(400, ErrorCode.VALIDATION, `不合法的動作: ${action}`)
   }
 
-  // 驗證狀態轉換是否合法
   const transitions = VALID_TRANSITIONS[question.status] ?? []
   const transition = transitions.find((t) => t.action === reviewAction)
   if (!transition) {
@@ -426,15 +460,12 @@ export async function updateQuestionStatus(
       `不合法的狀態轉換: ${question.status} → ${action}`)
   }
 
-  // SUBMIT: AUTHOR 必須是自己的題目
   if (reviewAction === ReviewAction.SUBMIT) {
     if (question.authorId !== sessionUser.id) {
       throw new AppError(403, ErrorCode.FORBIDDEN, '您只能送審自己建立的題目')
     }
-    // 執行嚴格驗證
     validateSubmitStrict(question, question.questionMedia)
 
-    // 題組父題：驗證所有子題
     if (question.isGroupParent) {
       const children = await prisma.question.findMany({
         where: { groupId: id },
@@ -449,7 +480,6 @@ export async function updateQuestionStatus(
     }
   }
 
-  // REJECT: comment 必填
   if (reviewAction === ReviewAction.REJECT) {
     if (!comment || comment.trim().length === 0) {
       throw new AppError(400, ErrorCode.REVIEW_COMMENT_REQUIRED, '退回時必須填寫退回原因')
@@ -460,21 +490,17 @@ export async function updateQuestionStatus(
     status: transition.target,
   }
 
-  // APPROVE 或 REJECT 更新 lastReviewerId
   if (reviewAction === ReviewAction.APPROVE || reviewAction === ReviewAction.REJECT) {
     updateData.lastReviewer = { connect: { id: sessionUser.id } }
   }
 
-  // 使用 transaction 確保一致性
   const updated = await prisma.$transaction(async (tx) => {
-    // 更新主表
     const result = await tx.question.update({
       where: { id },
       data: updateData,
       select: questionDetailSelect,
     })
 
-    // 新增 ReviewLog
     await tx.questionReviewLog.create({
       data: {
         questionId: id,
@@ -484,7 +510,6 @@ export async function updateQuestionStatus(
       },
     })
 
-    // 題組同步：更新所有子題狀態
     if (question.isGroupParent) {
       await tx.question.updateMany({
         where: { groupId: id },
@@ -495,6 +520,5 @@ export async function updateQuestionStatus(
     return result
   })
 
-  // 重新查詢以取得最新 reviewLogs
   return getQuestion(prisma, updated.id)
 }

@@ -83,6 +83,13 @@ model RolePermission {
 // 題庫管理模組 (Question Bank Module)
 // =============================================
 
+enum ExamCategory {
+  GTPT // 全民台語認證
+  TSH  // 中小學生台語認證
+
+  @@map("exam_category")
+}
+
 enum QuestionStatus {
   DRAFT
   PENDING
@@ -112,6 +119,7 @@ enum QuestionType {
 }
 
 enum QuestionSubType {
+  // GTPT SubTypes
   GRAMMAR
   COMPREHENSION
   CONVERSATION
@@ -120,6 +128,14 @@ enum QuestionSubType {
   READ_ALOUD
   EXPRESSION
   DICTATION_FILL
+
+  // TSH SubTypes
+  LISTEN_PICK_IMAGE   // 聽話揀圖 (TSH Listening)
+  IMAGE_PICK_ANSWER   // 看圖揀話 (TSH Listening)
+  TSH_DIALOGUE        // 對話理解 (TSH Listening)
+  IMAGE_PICK_SENTENCE // 看圖揀句 (TSH Reading)
+  TSH_FILL_BLANK      // 讀句補詞 (TSH Reading)
+  TSH_COMPREHENSION   // 短文理解 (TSH Reading)
 
   @@map("question_sub_type")
 }
@@ -133,6 +149,7 @@ enum TextSystem {
 
 model Question {
   id             String            @id @default(uuid())
+  category       ExamCategory
   type           QuestionType
   subType        QuestionSubType
   textSystem     TextSystem

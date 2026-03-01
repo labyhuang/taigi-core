@@ -71,7 +71,7 @@ api.interceptors.response.use(
     }
 
     // 標記了 _skipAuthRedirect 的請求（如 checkAuth）不做 401 跳轉
-    const skipRedirect = (reqConfig as Record<string, unknown>)?._skipAuthRedirect === true
+    const skipRedirect = (reqConfig as unknown as Record<string, unknown>)?._skipAuthRedirect === true
 
     switch (status) {
       case 401:

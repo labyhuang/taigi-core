@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Typography, Card, Tag, Descriptions, Button, Space, Modal, Input, Spin, Divider, message,
-  Radio,
+  Radio, Image,
 } from 'antd'
+import { PictureOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import api from '../../utils/api'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -15,12 +16,15 @@ import {
   STATUS_LABELS,
   STATUS_COLORS,
   TEXT_SYSTEM_LABELS,
+  CATEGORY_LABELS,
   MULTIPLE_CHOICE_SUBTYPES,
+  IMAGE_OPTION_SUBTYPES,
   GROUP_SUBTYPES,
   RUBRIC_SUBTYPES,
   QuestionStatus,
   type QuestionDetail as QuestionDetailType,
   type MultipleChoiceContent,
+  type ImageChoiceContent,
   type MultipleChoiceAnswer,
   type DictationAnswer,
   type SpeakingAnswer,
@@ -131,17 +135,21 @@ export default function QuestionDetail() {
       {/* 基本資訊 */}
       <Card style={{ marginBottom: 16 }}>
         <Descriptions column={2}>
-          <Descriptions.Item label="題型">
-            <Tag>{TYPE_LABELS[question.type] ?? question.type}</Tag>
-            <span>{SUB_TYPE_LABELS[question.subType] ?? question.subType}</span>
+          <Descriptions.Item label="考試類型">
+            <Tag color={question.category === 'TSH' ? 'orange' : 'blue'}>
+              {CATEGORY_LABELS[question.category] ?? question.category}
+            </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="狀態">
             <Tag color={STATUS_COLORS[question.status]}>{STATUS_LABELS[question.status] ?? question.status}</Tag>
           </Descriptions.Item>
+          <Descriptions.Item label="題型">
+            <Tag>{TYPE_LABELS[question.type] ?? question.type}</Tag>
+            <span>{SUB_TYPE_LABELS[question.subType] ?? question.subType}</span>
+          </Descriptions.Item>
           <Descriptions.Item label="拼音系統">{TEXT_SYSTEM_LABELS[question.textSystem] ?? question.textSystem}</Descriptions.Item>
           <Descriptions.Item label="出題者">{question.author.name ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="建立時間">{new Date(question.createdAt).toLocaleString('zh-TW')}</Descriptions.Item>
-          <Descriptions.Item label="更新時間">{new Date(question.updatedAt).toLocaleString('zh-TW')}</Descriptions.Item>
           {question.isGroupParent && (
             <Descriptions.Item label="類型"><Tag color="purple">題組父題</Tag></Descriptions.Item>
           )}
@@ -164,7 +172,6 @@ export default function QuestionDetail() {
             {question.questionMedia.filter((m) => m.purpose === 'IMAGE').map((m) => (
               <div key={m.media.id} style={{ marginBottom: 8 }}>
                 <Text type="secondary">圖片：{m.media.filename}</Text>
-                {/* 正式環境用 presigned URL */}
               </div>
             ))}
           </div>
@@ -178,13 +185,25 @@ export default function QuestionDetail() {
           </div>
         )}
 
-        {/* 單題選擇題內容 */}
+        {/* 文字選擇題 */}
         {MULTIPLE_CHOICE_SUBTYPES.includes(question.subType) && !GROUP_SUBTYPES.includes(question.subType) && question.content && (
           <div style={{ marginBottom: 16 }}>
             <Text strong>選項：</Text>
-            {renderOptions(
+            {renderTextOptions(
               question.content as MultipleChoiceContent,
               question.answer as MultipleChoiceAnswer | null,
+            )}
+          </div>
+        )}
+
+        {/* 圖片選項 (LISTEN_PICK_IMAGE) */}
+        {IMAGE_OPTION_SUBTYPES.includes(question.subType) && question.content && (
+          <div style={{ marginBottom: 16 }}>
+            <Text strong>圖片選項：</Text>
+            {renderImageOptions(
+              question.content as ImageChoiceContent,
+              question.answer as MultipleChoiceAnswer | null,
+              question.questionMedia,
             )}
           </div>
         )}
@@ -196,7 +215,7 @@ export default function QuestionDetail() {
             {question.children.map((child, idx) => (
               <Card key={child.id} size="small" title={`第 ${idx + 1} 題`} style={{ marginBottom: 12 }}>
                 {child.stem && <Paragraph>{child.stem}</Paragraph>}
-                {child.content && renderOptions(
+                {child.content && renderTextOptions(
                   child.content as MultipleChoiceContent,
                   child.answer as MultipleChoiceAnswer | null,
                 )}
@@ -222,7 +241,7 @@ export default function QuestionDetail() {
         )}
 
         {/* 逐字稿 */}
-        {question.answer && 'transcript' in (question.answer as Record<string, unknown>) && (question.answer as MultipleChoiceAnswer).transcript && (
+        {question.answer && 'transcript' in (question.answer as unknown as Record<string, unknown>) && (question.answer as MultipleChoiceAnswer).transcript && (
           <div style={{ marginTop: 16 }}>
             <Text strong>逐字稿：</Text>
             <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{(question.answer as MultipleChoiceAnswer).transcript}</Paragraph>
@@ -259,7 +278,7 @@ export default function QuestionDetail() {
   )
 }
 
-function renderOptions(content: MultipleChoiceContent, answer: MultipleChoiceAnswer | null) {
+function renderTextOptions(content: MultipleChoiceContent, answer: MultipleChoiceAnswer | null) {
   if (!content?.options) return null
   const correctIds = answer?.correctOptionIds ?? []
 
@@ -275,6 +294,63 @@ function renderOptions(content: MultipleChoiceContent, answer: MultipleChoiceAns
           </Radio>
         </div>
       ))}
+    </Radio.Group>
+  )
+}
+
+function renderImageOptions(
+  content: ImageChoiceContent,
+  answer: MultipleChoiceAnswer | null,
+  questionMedia: { purpose: string; media: { id: string; filename: string; mimeType: string } }[],
+) {
+  if (!content?.options) return null
+  const correctIds = answer?.correctOptionIds ?? []
+
+  const optionMediaMap = new Map<string, { id: string; filename: string }>()
+  for (const qm of questionMedia) {
+    if (qm.purpose === 'OPTION_IMAGE') {
+      optionMediaMap.set(qm.media.id, qm.media)
+    }
+  }
+
+  return (
+    <Radio.Group value={correctIds[0]} style={{ display: 'block', marginTop: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+        {content.options.map((opt, idx) => {
+          const isCorrect = correctIds.includes(opt.id)
+          return (
+            <div
+              key={opt.id}
+              style={{
+                border: isCorrect ? '2px solid #52c41a' : '1px solid #d9d9d9',
+                borderRadius: 8,
+                padding: 12,
+                textAlign: 'center',
+              }}
+            >
+              <Radio value={opt.id} disabled style={{ marginBottom: 8, display: 'block' }}>
+                <span style={{ fontWeight: 'bold' }}>
+                  {String.fromCharCode(65 + idx)}
+                  {isCorrect && <Tag color="green" style={{ marginLeft: 8 }}>正確答案</Tag>}
+                </span>
+              </Radio>
+              {opt.mediaId ? (
+                <Image
+                  src={`/uploads/media/${opt.mediaId}`}
+                  alt={opt.text ?? `選項 ${String.fromCharCode(65 + idx)}`}
+                  style={{ maxHeight: 150, objectFit: 'contain' }}
+                  fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjYWFhIj7lnJbniYc8L3RleHQ+PC9zdmc+"
+                />
+              ) : (
+                <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa', borderRadius: 4 }}>
+                  <PictureOutlined style={{ fontSize: 32, color: '#ccc' }} />
+                </div>
+              )}
+              {opt.text && <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>{opt.text}</div>}
+            </div>
+          )
+        })}
+      </div>
     </Radio.Group>
   )
 }

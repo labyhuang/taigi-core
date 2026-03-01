@@ -8,15 +8,16 @@ import axios from 'axios'
 import api from '../../utils/api'
 import MediaUpload from './components/MediaUpload'
 import {
-  QuestionType,
-  TextSystem,
-  VALID_TYPE_SUBTYPE_MAP,
+  ExamCategory,
+  VALID_CATEGORY_TYPE_SUBTYPE_MAP,
   MULTIPLE_CHOICE_SUBTYPES,
+  IMAGE_OPTION_SUBTYPES,
   AUDIO_REQUIRED_SUBTYPES,
   IMAGE_REQUIRED_SUBTYPES,
   GROUP_SUBTYPES,
   RUBRIC_SUBTYPES,
   STEM_REQUIRED_SUBTYPES,
+  CATEGORY_LABELS,
   TYPE_LABELS,
   SUB_TYPE_LABELS,
   TEXT_SYSTEM_LABELS,
@@ -27,7 +28,6 @@ import {
 const { Title } = Typography
 const { TextArea } = Input
 
-// nanoid 簡易替代：產生 8 字元隨機 ID
 function generateOptionId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   let result = ''
@@ -42,6 +42,12 @@ interface OptionField {
   text: string
 }
 
+interface ImageOptionField {
+  id: string
+  mediaId: string
+  text?: string
+}
+
 interface SubQuestionField {
   stem: string
   options: OptionField[]
@@ -49,11 +55,13 @@ interface SubQuestionField {
 }
 
 interface FormValues {
+  category: string
   type: string
   subType: string
   textSystem: string
   stem?: string
   options?: OptionField[]
+  imageOptions?: ImageOptionField[]
   correctOptionId?: string
   transcript?: string
   correctText?: string
@@ -61,6 +69,10 @@ interface FormValues {
   gradingRubric?: string
   audioMedia?: MediaLinkItem[]
   imageMedia?: MediaLinkItem[]
+  optionImageMedia0?: MediaLinkItem[]
+  optionImageMedia1?: MediaLinkItem[]
+  optionImageMedia2?: MediaLinkItem[]
+  optionImageMedia3?: MediaLinkItem[]
   subQuestions?: SubQuestionField[]
 }
 
@@ -75,22 +87,27 @@ export default function QuestionForm() {
   const [fetchLoading, setFetchLoading] = useState(false)
   const [typeLocked, setTypeLocked] = useState(false)
 
+  const selectedCategory = Form.useWatch('category', form)
   const selectedType = Form.useWatch('type', form)
   const selectedSubType = Form.useWatch('subType', form)
   const watchedOptions = Form.useWatch('options', form) as OptionField[] | undefined
 
   const isMultipleChoice = MULTIPLE_CHOICE_SUBTYPES.includes(selectedSubType ?? '')
+  const isImageOption = IMAGE_OPTION_SUBTYPES.includes(selectedSubType ?? '')
   const isGroup = GROUP_SUBTYPES.includes(selectedSubType ?? '')
   const needsAudio = AUDIO_REQUIRED_SUBTYPES.includes(selectedSubType ?? '')
   const needsImage = IMAGE_REQUIRED_SUBTYPES.includes(selectedSubType ?? '')
   const needsRubric = RUBRIC_SUBTYPES.includes(selectedSubType ?? '')
   const needsStem = STEM_REQUIRED_SUBTYPES.includes(selectedSubType ?? '') || isGroup
 
-  const subTypeOptions = selectedType
-    ? (VALID_TYPE_SUBTYPE_MAP[selectedType] ?? []).map((st) => ({ label: SUB_TYPE_LABELS[st] ?? st, value: st }))
+  const typeOptions = selectedCategory
+    ? Object.keys(VALID_CATEGORY_TYPE_SUBTYPE_MAP[selectedCategory] ?? {}).map((t) => ({ label: TYPE_LABELS[t] ?? t, value: t }))
     : []
 
-  // 編輯模式：載入既有資料
+  const subTypeOptions = selectedCategory && selectedType
+    ? (VALID_CATEGORY_TYPE_SUBTYPE_MAP[selectedCategory]?.[selectedType] ?? []).map((st) => ({ label: SUB_TYPE_LABELS[st] ?? st, value: st }))
+    : []
+
   const fetchQuestion = useCallback(async () => {
     if (!id) return
     setFetchLoading(true)
@@ -98,12 +115,14 @@ export default function QuestionForm() {
       const res = await api.get<{ data: QuestionDetail }>(`/questions/${id}`)
       const q = res.data.data
       const values: Partial<FormValues> = {
+        category: q.category,
         type: q.type,
         subType: q.subType,
         textSystem: q.textSystem,
         stem: q.stem ?? undefined,
       }
 
+      // 文字選擇題（單題）
       if (MULTIPLE_CHOICE_SUBTYPES.includes(q.subType) && !GROUP_SUBTYPES.includes(q.subType)) {
         const content = q.content as { options?: OptionField[] } | null
         const answer = q.answer as { correctOptionIds?: string[]; transcript?: string } | null
@@ -112,6 +131,24 @@ export default function QuestionForm() {
         values.transcript = answer?.transcript
       }
 
+      // 圖片選項 (LISTEN_PICK_IMAGE)
+      if (IMAGE_OPTION_SUBTYPES.includes(q.subType)) {
+        const content = q.content as { options?: ImageOptionField[] } | null
+        const answer = q.answer as { correctOptionIds?: string[] } | null
+        values.imageOptions = content?.options ?? []
+        values.correctOptionId = answer?.correctOptionIds?.[0]
+
+        // 將每個選項的圖片 media 設定到對應的表單欄位
+        const opts = content?.options ?? []
+        opts.forEach((opt, idx) => {
+          if (opt.mediaId) {
+            const key = `optionImageMedia${idx}` as keyof FormValues
+            ;(values as Record<string, unknown>)[key] = [{ mediaId: opt.mediaId, purpose: 'OPTION_IMAGE' }]
+          }
+        })
+      }
+
+      // 題組
       if (GROUP_SUBTYPES.includes(q.subType) && q.children) {
         const answer = q.answer as { transcript?: string } | null
         values.transcript = answer?.transcript
@@ -137,7 +174,6 @@ export default function QuestionForm() {
         values.gradingRubric = answer?.gradingRubric
       }
 
-      // 媒體
       const audioMedia = q.questionMedia.filter((m) => m.purpose === 'AUDIO').map((m) => ({ mediaId: m.media.id, purpose: 'AUDIO' }))
       const imageMedia = q.questionMedia.filter((m) => m.purpose === 'IMAGE').map((m) => ({ mediaId: m.media.id, purpose: 'IMAGE' }))
       if (audioMedia.length > 0) values.audioMedia = audioMedia
@@ -162,9 +198,39 @@ export default function QuestionForm() {
       ...(values.imageMedia ?? []),
     ]
 
+    // 圖片選項 (LISTEN_PICK_IMAGE)
+    if (isImageOption) {
+      const imageOptions: ImageOptionField[] = []
+      for (let i = 0; i < 4; i++) {
+        const optMedia = (values as unknown as Record<string, unknown>)[`optionImageMedia${i}`] as MediaLinkItem[] | undefined
+        const optId = values.imageOptions?.[i]?.id ?? generateOptionId()
+        const optMediaId = optMedia?.[0]?.mediaId ?? ''
+        const optText = values.imageOptions?.[i]?.text ?? ''
+        imageOptions.push({ id: optId, mediaId: optMediaId, text: optText })
+
+        if (optMediaId) {
+          mediaIds.push({ mediaId: optMediaId, purpose: 'OPTION_IMAGE' })
+        }
+      }
+
+      return {
+        category: values.category,
+        type: values.type,
+        subType: values.subType,
+        textSystem: values.textSystem,
+        stem: values.stem,
+        content: { options: imageOptions },
+        answer: {
+          correctOptionIds: values.correctOptionId ? [values.correctOptionId] : [],
+        },
+        mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+      }
+    }
+
     // 單題選擇題
     if (isMultipleChoice && !isGroup) {
       return {
+        category: values.category,
         type: values.type,
         subType: values.subType,
         textSystem: values.textSystem,
@@ -181,6 +247,7 @@ export default function QuestionForm() {
     // 聽寫題
     if (values.subType === 'DICTATION_FILL') {
       return {
+        category: values.category,
         type: values.type,
         subType: values.subType,
         textSystem: values.textSystem,
@@ -196,6 +263,7 @@ export default function QuestionForm() {
     // 口說題
     if (needsRubric) {
       return {
+        category: values.category,
         type: values.type,
         subType: values.subType,
         textSystem: values.textSystem,
@@ -209,6 +277,7 @@ export default function QuestionForm() {
     // 題組父題
     if (isGroup) {
       return {
+        category: values.category,
         type: values.type,
         subType: values.subType,
         textSystem: values.textSystem,
@@ -218,6 +287,7 @@ export default function QuestionForm() {
     }
 
     return {
+      category: values.category,
       type: values.type,
       subType: values.subType,
       textSystem: values.textSystem,
@@ -238,10 +308,10 @@ export default function QuestionForm() {
       } else {
         const res = await api.post<{ data: { id: string } }>('/questions', payload)
 
-        // 題組：建立子題
         if (isGroup && values.subQuestions) {
           for (const sq of values.subQuestions) {
             await api.post('/questions', {
+              category: values.category,
               type: values.type,
               subType: values.subType,
               textSystem: values.textSystem,
@@ -283,6 +353,7 @@ export default function QuestionForm() {
         if (isGroup && values.subQuestions) {
           for (const sq of values.subQuestions) {
             await api.post('/questions', {
+              category: values.category,
               type: values.type,
               subType: values.subType,
               textSystem: values.textSystem,
@@ -317,14 +388,24 @@ export default function QuestionForm() {
       <Title level={4}>{isEdit ? '編輯試題' : '新增試題'}</Title>
 
       <Form form={form} layout="vertical" requiredMark="optional">
-        {/* 第一段：基本類型選擇 */}
+        {/* 第一段：考試類型與基本設定 */}
         <Card title="題型設定" style={{ marginBottom: 16 }}>
           <Space wrap style={{ width: '100%' }}>
-            <Form.Item name="type" label="主類型" rules={[{ required: true, message: '請選擇主類型' }]} style={{ minWidth: 160 }}>
+            <Form.Item name="category" label="考試類型" rules={[{ required: true, message: '請選擇考試類型' }]} style={{ minWidth: 180 }}>
               <Select
                 placeholder="請選擇"
                 disabled={typeLocked}
-                options={Object.values(QuestionType).map((t) => ({ label: TYPE_LABELS[t], value: t }))}
+                options={Object.values(ExamCategory).map((c) => ({ label: CATEGORY_LABELS[c], value: c }))}
+                onChange={() => {
+                  form.setFieldsValue({ type: undefined, subType: undefined })
+                }}
+              />
+            </Form.Item>
+            <Form.Item name="type" label="主類型" rules={[{ required: true, message: '請選擇主類型' }]} style={{ minWidth: 160 }}>
+              <Select
+                placeholder="請選擇"
+                disabled={typeLocked || !selectedCategory}
+                options={typeOptions}
                 onChange={() => form.setFieldValue('subType', undefined)}
               />
             </Form.Item>
@@ -348,7 +429,7 @@ export default function QuestionForm() {
         {/* 第二段：依題型動態渲染 */}
         {selectedSubType && (
           <>
-            {/* 媒體上傳 */}
+            {/* 音檔上傳 */}
             {needsAudio && (
               <Card title="音檔上傳" style={{ marginBottom: 16 }}>
                 <Form.Item name="audioMedia" label="音檔 (.mp3)">
@@ -357,24 +438,35 @@ export default function QuestionForm() {
               </Card>
             )}
 
+            {/* 題幹圖片上傳（STORYTELLING 支援多張，其他題型限 1 張） */}
             {needsImage && (
               <Card title="圖片上傳" style={{ marginBottom: 16 }}>
                 <Form.Item name="imageMedia" label="圖片 (.jpg/.png)">
-                  <MediaUpload accept=".jpg,.jpeg,.png" purpose="IMAGE" maxCount={5} maxSizeMB={5} label="上傳圖片" />
+                  <MediaUpload
+                    accept=".jpg,.jpeg,.png"
+                    purpose="IMAGE"
+                    maxCount={selectedSubType === 'STORYTELLING' ? 5 : 1}
+                    maxSizeMB={5}
+                    label="上傳圖片"
+                  />
                 </Form.Item>
               </Card>
             )}
 
             {/* 題幹 */}
-            {needsStem && (
+            {(needsStem || ['IMAGE_PICK_ANSWER', 'IMAGE_PICK_SENTENCE', 'LISTEN_PICK_IMAGE'].includes(selectedSubType)) && (
               <Card title="題幹" style={{ marginBottom: 16 }}>
-                <Form.Item name="stem" label="題幹文字">
+                <Form.Item
+                  name="stem"
+                  label={needsStem ? '題幹文字' : '題幹文字（選填，可填寫指導語）'}
+                  rules={needsStem ? [{ required: true, message: '請填寫題幹' }] : undefined}
+                >
                   <TextArea rows={4} placeholder="請輸入題幹..." />
                 </Form.Item>
               </Card>
             )}
 
-            {/* 單題選擇題 */}
+            {/* 單題文字選擇題 */}
             {isMultipleChoice && !isGroup && (
               <Card title="選項與答案" style={{ marginBottom: 16 }}>
                 <Form.Item name="correctOptionId" label="請點選正確答案" rules={[{ required: true, message: '請選擇正確答案' }]}>
@@ -403,11 +495,48 @@ export default function QuestionForm() {
                   </Radio.Group>
                 </Form.Item>
 
-                {selectedSubType && ['CONVERSATION', 'SPEECH'].includes(selectedSubType) && (
+                {selectedSubType && ['CONVERSATION', 'SPEECH', 'TSH_DIALOGUE'].includes(selectedSubType) && (
                   <Form.Item name="transcript" label="逐字稿">
                     <TextArea rows={3} placeholder="請輸入音檔逐字稿..." />
                   </Form.Item>
                 )}
+              </Card>
+            )}
+
+            {/* 圖片選項 (LISTEN_PICK_IMAGE) */}
+            {isImageOption && (
+              <Card title="圖片選項與答案" style={{ marginBottom: 16 }}>
+                <Form.List name="imageOptions" initialValue={[
+                  { id: generateOptionId(), mediaId: '', text: '' },
+                  { id: generateOptionId(), mediaId: '', text: '' },
+                  { id: generateOptionId(), mediaId: '', text: '' },
+                  { id: generateOptionId(), mediaId: '', text: '' },
+                ]}>
+                  {(fields) => {
+                    const watchedImageOptions = form.getFieldValue('imageOptions') as ImageOptionField[] | undefined
+                    return (
+                      <Form.Item name="correctOptionId" label="請點選正確答案" rules={[{ required: true, message: '請選擇正確答案' }]}>
+                        <Radio.Group style={{ display: 'block' }}>
+                          {fields.map((field, index) => (
+                            <div key={field.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16, padding: 12, border: '1px solid #f0f0f0', borderRadius: 8 }}>
+                              <Radio value={watchedImageOptions?.[index]?.id ?? ''} style={{ marginTop: 4 }} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: 8 }}>選項 {String.fromCharCode(65 + index)}</div>
+                                <Form.Item name={[field.name, 'id']} hidden><Input /></Form.Item>
+                                <Form.Item name={`optionImageMedia${index}`} label="上傳圖片">
+                                  <MediaUpload accept=".jpg,.jpeg,.png" purpose="OPTION_IMAGE" maxCount={1} maxSizeMB={5} label="選擇圖片" />
+                                </Form.Item>
+                                <Form.Item name={[field.name, 'text']} label="圖片描述 (選填)">
+                                  <Input placeholder="Alt text（選填）" />
+                                </Form.Item>
+                              </div>
+                            </div>
+                          ))}
+                        </Radio.Group>
+                      </Form.Item>
+                    )
+                  }}
+                </Form.List>
               </Card>
             )}
 
