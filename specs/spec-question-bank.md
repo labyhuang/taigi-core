@@ -356,7 +356,7 @@ model AttributeValue {
 **注意事項：**
 
 - 媒體關聯**主要透過 `QuestionMedia` junction table 管理**。唯一例外是 `LISTEN_PICK_IMAGE` (聽話揀圖) 的選項圖片，其 `mediaId` 同時記錄在 `content.options[].mediaId` 中（方便前端渲染）以及 `QuestionMedia` 中（`purpose: "OPTION_IMAGE"`，方便查詢與刪除保護）。
-- `User` model 需在 `spec-01.md` 的 schema 中補充對應的反向關聯欄位（`questionsAuthored`、`questionsReviewed`、`reviewLogs`、`mediaUploads`）。
+- `User` model 需在 `spec-rbac.md` 的 schema 中補充對應的反向關聯欄位（`questionsAuthored`、`questionsReviewed`、`reviewLogs`、`mediaUploads`）。
 - 題組子題的 `status` **跟隨父題**：對父題執行狀態變更時，後端須同步更新所有 `groupId` 指向該父題的子題狀態。子題不可獨立執行狀態變更。
 - **`category` 為建立後不可變更的欄位**，不允許在 `PATCH /api/questions/:id` 時修改 category。
 - **`attributes`** 欄位為 JSONB，其合法的 key 與 value 由 `AttributeDefinition` / `AttributeValue` 表定義。建立或更新題目時，後端須驗證 `attributes` 中的每個 key 都存在於 `AttributeDefinition` 中，且 value 為該 key 的合法值。

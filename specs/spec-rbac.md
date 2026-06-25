@@ -318,3 +318,65 @@ API 回應的格式與錯誤碼描述在 [api-response.md](./api-response.md)
 * **邏輯:** 檢查 PostgreSQL 與 Redis 連線狀態，回傳系統健康資訊。
 * **回應:** `{ success: true, data: { status: "ok", db: "connected", redis: "connected", uptime: number } }`
 * 此端點不需驗證，供監控系統使用。
+
+---
+
+## 10. 前端功能頁面 (RBAC/Auth)
+
+以下為 RBAC/Auth 模組專屬前端頁面規格；前端共通技術與攔截器規範請見 [spec.md](./spec.md)。
+
+### 10.1 帳號開通精靈 (`src/pages/SetupWizard/index.tsx`)
+
+**功能:** 處理邀請連結 (`?token=xxx`)，引導新帳號設定密碼與 2FA。  
+**UI:** 使用 Antd `<Steps>`（鎖定點擊切換）與 `<Form>`。
+
+* **初始化 (Step 0):**
+  * 從 URL 取得 `token`，立即使用 `window.history.replaceState({}, '', '/setup')` 清除 URL 中的明文 token，避免歷史紀錄洩漏。
+  * 送出 `POST /api/users/setup/verify-token`（Body: `{ token }`）。
+  * 嚴禁使用 GET 傳送明文 token。
+  * token 無效時顯示 `<Result status="error">`；有效則進入 Step 1。
+
+* **基本資料 (Step 1):**
+  * 表單包含姓名、密碼、確認密碼。
+  * 密碼規則需與後端一致：最少 8 字元，且含大寫、小寫、數字各一。
+  * 送出至 `POST /api/users/setup/profile`，成功後進入 Step 2。
+
+* **綁定 2FA (Step 2):**
+  * 呼叫 `POST /api/users/setup/2fa-generate` 取得 `otpauth://...`。
+  * 使用 `qrcode.react` 顯示 QR Code。
+  * 提供 6 位數驗證碼輸入（建議 Antd `<Input.OTP>`）。
+  * 送出 `POST /api/users/setup/2fa-verify` 成功後，呼叫 `useAuthStore.getState().checkAuth()`，再轉址 `/`。
+
+### 10.2 登入頁 (`src/pages/LoginPage/index.tsx`)
+
+* 兩階段表單流程：
+  1. 第一階段送出 Email/密碼至 `POST /api/auth/login`。
+  2. 若回傳 `{ requiresTwoFactor: true, challengeId }`，將 `challengeId` 暫存於元件 state。
+  3. 第二階段切換到 OTP 輸入框，送出 `{ challengeId, totpCode }` 至 `POST /api/auth/verify-2fa`。
+* 登入成功後呼叫 `useAuthStore.getState().checkAuth()`，再依 `location.state?.from` 導回原頁（預設 `/`）。
+
+### 10.3 後台帳號管理 (`src/pages/admin/UserManagement/index.tsx`)
+
+**頁面進入權限:** `user:list`。
+頁面內操作需依權限控制：
+
+* 邀請按鈕：`user:invite`
+* 停權開關：`user:deactivate`
+* 編輯角色按鈕：`user:assign-role`
+
+**功能:** 帳號列表、邀請新帳號、角色管理、停權操作。資料來源為 `GET /api/admin/users`（支援分頁）。
+
+* **列表 (`<Table>`):**
+  * 欄位：姓名、Email、角色、2FA 狀態、帳號狀態。
+  * 狀態切換透過 `<Switch>` 更新 `PATCH /api/admin/users/:id/status`；停權需 `<Popconfirm>` 二次確認。
+  * 目前登入中的 Admin 不可對自己操作（Switch 與編輯按鈕 disabled）。
+  * 所有提交操作需有 loading/disabled 防重送機制。
+
+* **邀請流程:**
+  1. Modal 表單欄位：Email、角色（多選）。
+  2. 送出 `POST /api/admin/users/invite`。
+  3. 成功後關閉表單 Modal，立即開啟 Result Modal。
+  4. Result Modal 顯示可複製的 `inviteUrl`（`<Typography.Text copyable>`）。
+
+* **編輯角色:**
+  * 以多選 Modal 編輯角色，送出至 `PUT /api/admin/users/:id/roles`，成功後重載列表。
