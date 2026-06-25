@@ -28,6 +28,16 @@ export const PermissionAction = {
   MEDIA_READ: 'media:read',
   MEDIA_DELETE: 'media:delete',
 
+  // 考期 / 應答匯入（spec-exam-session.md）
+  EXAM_SESSION_CREATE: 'exam-session:create',
+  EXAM_SESSION_READ: 'exam-session:read',
+  EXAM_SESSION_UPDATE: 'exam-session:update',
+  EXAM_SESSION_DELETE: 'exam-session:delete',
+  EXAM_SESSION_IMPORT: 'exam-session:import',
+
+  // API client 管理（spec-exam-session.md §7）
+  API_CLIENT_MANAGE: 'api-client:manage',
+
   // 系統管理
   SYSTEM_MANAGE: 'system:manage',
 } as const

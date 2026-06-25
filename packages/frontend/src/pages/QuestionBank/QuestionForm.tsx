@@ -24,6 +24,7 @@ import {
   type QuestionDetail,
   type MediaLinkItem,
 } from './types'
+import type { AttributeDefinitionItem } from '../ExamAssembly/types'
 
 const { Title } = Typography
 const { TextArea } = Input
@@ -74,6 +75,7 @@ interface FormValues {
   optionImageMedia2?: MediaLinkItem[]
   optionImageMedia3?: MediaLinkItem[]
   subQuestions?: SubQuestionField[]
+  attributes?: Record<string, string>
 }
 
 export default function QuestionForm() {
@@ -86,6 +88,7 @@ export default function QuestionForm() {
   const [submitLoading, setSubmitLoading] = useState(false)
   const [fetchLoading, setFetchLoading] = useState(false)
   const [typeLocked, setTypeLocked] = useState(false)
+  const [attrDefs, setAttrDefs] = useState<AttributeDefinitionItem[]>([])
 
   const selectedCategory = Form.useWatch('category', form)
   const selectedType = Form.useWatch('type', form)
@@ -107,6 +110,17 @@ export default function QuestionForm() {
   const subTypeOptions = selectedCategory && selectedType
     ? (VALID_CATEGORY_TYPE_SUBTYPE_MAP[selectedCategory]?.[selectedType] ?? []).map((st) => ({ label: SUB_TYPE_LABELS[st] ?? st, value: st }))
     : []
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const params: Record<string, string> = {}
+        if (selectedCategory) params.examCategory = selectedCategory
+        const res = await api.get<{ data: AttributeDefinitionItem[] }>('/attributes', { params })
+        setAttrDefs(res.data.data)
+      } catch { /* ignore */ }
+    })()
+  }, [selectedCategory])
 
   const fetchQuestion = useCallback(async () => {
     if (!id) return
@@ -179,6 +193,10 @@ export default function QuestionForm() {
       if (audioMedia.length > 0) values.audioMedia = audioMedia
       if (imageMedia.length > 0) values.imageMedia = imageMedia
 
+      if (q.attributes && typeof q.attributes === 'object') {
+        values.attributes = q.attributes as Record<string, string>
+      }
+
       form.setFieldsValue(values)
       setTypeLocked(true)
     } catch {
@@ -197,6 +215,11 @@ export default function QuestionForm() {
       ...(values.audioMedia ?? []),
       ...(values.imageMedia ?? []),
     ]
+
+    const cleanAttrs = values.attributes
+      ? Object.fromEntries(Object.entries(values.attributes).filter(([, v]) => v != null && v !== ''))
+      : undefined
+    const attrField = cleanAttrs && Object.keys(cleanAttrs).length > 0 ? { attributes: cleanAttrs } : {}
 
     // 圖片選項 (LISTEN_PICK_IMAGE)
     if (isImageOption) {
@@ -224,6 +247,7 @@ export default function QuestionForm() {
           correctOptionIds: values.correctOptionId ? [values.correctOptionId] : [],
         },
         mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+        ...attrField,
       }
     }
 
@@ -241,6 +265,7 @@ export default function QuestionForm() {
           ...(values.transcript ? { transcript: values.transcript } : {}),
         },
         mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+        ...attrField,
       }
     }
 
@@ -257,6 +282,7 @@ export default function QuestionForm() {
           ...(values.acceptableAlternatives?.length ? { acceptableAlternatives: values.acceptableAlternatives } : {}),
         },
         mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+        ...attrField,
       }
     }
 
@@ -271,6 +297,7 @@ export default function QuestionForm() {
         content: undefined,
         answer: { gradingRubric: values.gradingRubric ?? '' },
         mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+        ...attrField,
       }
     }
 
@@ -283,6 +310,7 @@ export default function QuestionForm() {
         textSystem: values.textSystem,
         stem: values.stem,
         mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+        ...attrField,
       }
     }
 
@@ -293,6 +321,7 @@ export default function QuestionForm() {
       textSystem: values.textSystem,
       stem: values.stem,
       mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+      ...attrField,
     }
   }
 
@@ -425,6 +454,29 @@ export default function QuestionForm() {
             </Form.Item>
           </Space>
         </Card>
+
+        {/* 屬性設定 */}
+        {selectedCategory && attrDefs.length > 0 && (
+          <Card title="屬性設定" style={{ marginBottom: 16 }}>
+            <Space wrap>
+              {attrDefs.map((attr) => (
+                <Form.Item
+                  key={attr.key}
+                  name={['attributes', attr.key]}
+                  label={attr.name}
+                  rules={attr.isRequired ? [{ required: true, message: `請選擇${attr.name}` }] : undefined}
+                  style={{ minWidth: 160 }}
+                >
+                  <Select
+                    placeholder={`請選擇${attr.name}`}
+                    allowClear={!attr.isRequired}
+                    options={attr.values.map((v) => ({ value: v.value, label: v.label }))}
+                  />
+                </Form.Item>
+              ))}
+            </Space>
+          </Card>
+        )}
 
         {/* 第二段：依題型動態渲染 */}
         {selectedSubType && (

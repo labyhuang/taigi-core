@@ -111,6 +111,7 @@ export const CreateQuestionBody = Type.Object({
   answer: Type.Optional(Type.Any()),
   mediaIds: Type.Optional(Type.Array(MediaLinkSchema)),
   groupId: Type.Optional(Type.String({ format: 'uuid' })),
+  attributes: Type.Optional(Type.Record(Type.String(), Type.String())),
 })
 export type CreateQuestionBodyType = Static<typeof CreateQuestionBody>
 
@@ -121,6 +122,7 @@ export const UpdateQuestionBody = Type.Object({
   content: Type.Optional(Type.Any()),
   answer: Type.Optional(Type.Any()),
   mediaIds: Type.Optional(Type.Array(MediaLinkSchema)),
+  attributes: Type.Optional(Type.Record(Type.String(), Type.String())),
 })
 export type UpdateQuestionBodyType = Static<typeof UpdateQuestionBody>
 

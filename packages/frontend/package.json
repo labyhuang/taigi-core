@@ -15,10 +15,12 @@
     "@taigi-core/shared": "workspace:*",
     "antd": "^5.x",
     "axios": "^1.x",
+    "dayjs": "^1.11.20",
     "qrcode.react": "^4.x",
     "react": "^19.x",
     "react-dom": "^19.x",
     "react-router-dom": "^7.x",
+    "recharts": "^3.8.1",
     "zustand": "^5.x"
   },
   "devDependencies": {

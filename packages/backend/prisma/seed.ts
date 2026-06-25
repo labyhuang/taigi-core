@@ -48,6 +48,14 @@ const PERMISSIONS = [
   { action: 'media:upload', description: '上傳素材' },
   { action: 'media:read', description: '查看素材' },
   { action: 'media:delete', description: '刪除素材' },
+  // 考期 / 應答匯入（spec-exam-session.md）
+  { action: 'exam-session:create', description: '建立考期' },
+  { action: 'exam-session:read', description: '查看考期' },
+  { action: 'exam-session:update', description: '編輯考期 / 變更狀態 / 綁定考卷' },
+  { action: 'exam-session:delete', description: '刪除考期' },
+  { action: 'exam-session:import', description: '匯入考生 / 應答 / 口說評分資料' },
+  // API client 管理（spec-exam-session.md §7）
+  { action: 'api-client:manage', description: '建立 / 撤銷 / 旋轉 API key' },
   // 系統管理
   { action: 'system:manage', description: '系統層級管理操作' },
 ] as const
@@ -74,6 +82,10 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     'exam:read',
     'exam:update',
     'exam:assemble',
+    'exam-session:create',
+    'exam-session:read',
+    'exam-session:update',
+    'exam-session:import',
   ],
 }
 
@@ -162,6 +174,56 @@ async function main() {
   console.log(`     ${plainToken}`)
   console.log('═══════════════════════════════════════════════════════')
   console.log('')
+
+  // 5. 建立屬性定義 (AttributeDefinition)
+  console.log('📦 建立屬性定義...')
+  const ATTRIBUTE_DEFINITIONS = [
+    {
+      key: 'difficulty',
+      name: '困難度',
+      examCategory: null,
+      isRequired: true,
+      values: [
+        { value: 'HIGH', label: '高', orderIndex: 1 },
+        { value: 'MEDIUM', label: '中', orderIndex: 2 },
+        { value: 'LOW', label: '低', orderIndex: 3 },
+      ],
+    },
+  ] as const
+
+  for (const attrDef of ATTRIBUTE_DEFINITIONS) {
+    const existing = await prisma.attributeDefinition.findUnique({
+      where: { key: attrDef.key },
+    })
+
+    if (existing) {
+      await prisma.attributeDefinition.update({
+        where: { key: attrDef.key },
+        data: {
+          name: attrDef.name,
+          isRequired: attrDef.isRequired,
+        },
+      })
+    } else {
+      await prisma.attributeDefinition.create({
+        data: {
+          key: attrDef.key,
+          name: attrDef.name,
+          examCategory: attrDef.examCategory,
+          isRequired: attrDef.isRequired,
+          values: {
+            create: attrDef.values.map((v) => ({
+              value: v.value,
+              label: v.label,
+              orderIndex: v.orderIndex,
+            })),
+          },
+        },
+      })
+    }
+  }
+  console.log(`   ✅ ${ATTRIBUTE_DEFINITIONS.length} 個屬性定義已建立\n`)
+
   console.log('🎉 Seed 完成！')
 }
 

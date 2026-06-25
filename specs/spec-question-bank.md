@@ -178,6 +178,7 @@ enum QuestionStatus {
 
 // --- 審查動作 ---
 enum ReviewAction {
+  CREATE      // 建立草稿（題目首次新增時記錄）
   SUBMIT      // 送審
   APPROVE     // 核可
   REJECT      // 退回
@@ -538,7 +539,9 @@ export const QuestionAnswerSchema = Type.Union([
 * **邏輯:**
   1. 建立 `Question` 記錄，`status = DRAFT`，`authorId` 設為當前登入使用者。
   2. 若有 `mediaIds`，建立對應的 `QuestionMedia` 關聯。
-  3. 新增 ReviewLog `{ action: 'SUBMIT', comment: null }`（記錄建立動作，此處 action 用 `SUBMIT` 語意為「建立」）。
+  3. 新增 ReviewLog `{ action: 'CREATE', comment: null }`（記錄建立動作）。
+  4. 步驟 1–3 必須包在同一個 `prisma.$transaction` 內，確保「題目」與「初始 ReviewLog」原子性。
+  5. 對 `body.attributes` 執行 shape 驗證：每個 key 須對應 `AttributeDefinition`，且 value 須對應該定義下的 `AttributeValue`（合法值清單）。不合法回 `ERR_VALIDATION`，details 列出該 key 的合法值。具體實作見 [spec-bugfixes.md §7](./spec-bugfixes.md#7-bug-6%E9%80%81%E5%AF%A9%E6%9C%AA%E9%A9%97-attributes-%E5%BF%85%E5%A1%AB) 的 `validateAttributesShape`。
 * **Response:** `{ success: true, data: { id, type, subType, status, ... } }`
 
 #### 1.2 查詢題目列表 `GET /api/questions`
@@ -558,11 +561,14 @@ export const QuestionAnswerSchema = Type.Union([
   | `groupId`  | string | —   | 查詢特定題組的子題                       |
   | `authorId` | string | —   | 篩選特定作者                          |
 
-* **角色層級篩選（後端強制）：**
-  
-  * `AUTHOR`：自動附加 `authorId = 當前使用者 ID`，僅能看到自己的題目。
-  * `REVIEWER`：自動附加 `status = PENDING`，僅能看到待審題目。
-  * `ADMIN`：無額外限制。
+* **角色層級篩選（後端強制，依優先級判斷）：**
+
+  優先級由高到低，第一個命中的條件決定可見範圍：
+
+  1. `system:manage` (ADMIN)：無額外限制，可看到所有狀態
+  2. `question:approve` (REVIEWER)：自動附加 `status = PENDING`
+  3. `question:create` (AUTHOR)：自動附加 `authorId = 當前使用者 ID`
+  4. **預設（含 ASSEMBLER 等純讀者）**：自動附加 `status = APPROVED`，避免越權看到 DRAFT/PENDING/REJECTED 題目（見 [spec-bugfixes.md §5](./spec-bugfixes.md#5-bug-4assembler-%E8%B6%8A%E6%AC%8A%E7%9C%8B%E5%88%B0%E6%89%80%E6%9C%89%E9%A1%8C%E7%9B%AE)）
 
 * **Response data:** 題目陣列，每筆包含 `id`, `category`, `type`, `subType`, `textSystem`, `stem`, `status`, `attributes`, `isGroupParent`, `author` (`{ id, name }`), `createdAt`, `updatedAt`。
 
@@ -570,7 +576,11 @@ export const QuestionAnswerSchema = Type.Union([
 
 #### 1.3 取得題目詳情 `GET /api/questions/:id`
 
-* **權限:** `question:read`（AUTHOR 僅能查看自己的題目，REVIEWER 僅能查看 `PENDING` 狀態）
+* **權限:** `question:read`，但回傳資料受角色層級限制（與 §1.2 相同邏輯）：
+  * ADMIN：可查看任何狀態
+  * REVIEWER：可查看 `PENDING` 狀態
+  * AUTHOR：可查看自己建立的題目（任何狀態）
+  * 純讀者（含 ASSEMBLER）：僅可查看 `APPROVED` 題目，其他狀態回 `403 ERR_FORBIDDEN`
 * **Response data:**
   * 題目完整資訊：`id`, `category`, `type`, `subType`, `textSystem`, `stem`, `status`, `content`, `answer`, `attributes`, `isGroupParent`, `groupId`
   * 關聯媒體：`media[]`（含 `id`, `filename`, `mimeType`, `durationSeconds`, `purpose`）
@@ -599,13 +609,19 @@ export const QuestionAnswerSchema = Type.Union([
 
 #### 2.1 變更題目狀態 `PATCH /api/questions/:id/status`
 
-* **權限:** 依動作不同需要不同權限：
-  * `SUBMIT` → `question:submit`
-  * `APPROVE` → `question:approve`
-  * `REJECT` → `question:reject`
-  * `ARCHIVE` → `system:manage`
+* **路由 preHandler:** `requireAuth()`（僅檢查登入），實際權限**動態於 service 層判斷**——避免 route 層 hardcode 單一權限造成越權（見 [spec-bugfixes.md §4](./spec-bugfixes.md#4-bug-3patch-apiquestionsidstatus-%E6%AC%8A%E9%99%90%E5%A4%AA%E5%AF%AC)）。
+* **權限矩陣（service 層動態檢查）：**
+
+  | action | 所需權限 | 預期角色 |
+  |--------|---------|---------|
+  | `SUBMIT` | `question:submit` | AUTHOR / ADMIN |
+  | `APPROVE` | `question:approve` | REVIEWER / ADMIN |
+  | `REJECT` | `question:reject` | REVIEWER / ADMIN |
+  | `ARCHIVE` | `system:manage` | ADMIN |
+
+  > **DON'T:** route 層用 `requirePermission('question:read')` 統一處理。`question:read` 是 ASSEMBLER 等唯讀角色都會有的權限，會造成越權執行 APPROVE / REJECT / ARCHIVE。
 * **Request Body:**
-  
+
   ```json
   {
     "action": "SUBMIT | APPROVE | REJECT | ARCHIVE",
@@ -613,15 +629,16 @@ export const QuestionAnswerSchema = Type.Union([
   }
   ```
 * **驗證規則:**
-  1. 檢查狀態轉換是否合法（參照第一部分合法狀態轉換表），不合法回傳 `ERR_INVALID_STATUS_TRANSITION`。
-  2. `SUBMIT` 時執行送審嚴格驗證（參照第二部分第 3 節），驗證失敗回傳 `ERR_VALIDATION`。
-  3. `REJECT` 時 `comment` 為必填，未填回傳 `ERR_REVIEW_COMMENT_REQUIRED`。
-  4. AUTHOR 執行 `SUBMIT` 時須驗證該題為自己所建立。
+  1. 對照權限矩陣檢查 `sessionUser.permissions` 是否含對應權限，不足回傳 `ERR_FORBIDDEN`。
+  2. 檢查狀態轉換是否合法（參照第一部分合法狀態轉換表），不合法回傳 `ERR_INVALID_STATUS_TRANSITION`。
+  3. `SUBMIT` 時執行送審嚴格驗證（參照第二部分第 3 節，含必填 `attributes` 驗證），驗證失敗回傳 `ERR_VALIDATION`。
+  4. `REJECT` 時 `comment` 為必填，未填回傳 `ERR_REVIEW_COMMENT_REQUIRED`。
+  5. AUTHOR 執行 `SUBMIT` 時須驗證該題為自己所建立。
 * **邏輯:**
   1. 更新主表 `status`。
   2. 若為 `APPROVE` 或 `REJECT`，更新 `lastReviewerId`。
-  3. 新增 `QuestionReviewLog` 記錄。
-  4. **題組同步：** 若為題組父題 (`isGroupParent = true`)，同步更新所有子題的 `status`。
+  3. 新增 `QuestionReviewLog` 記錄（`action` 對應使用者操作）。
+  4. **題組同步：** 若為題組父題 (`isGroupParent = true`)，同步更新所有子題的 `status`，並對所有子題執行送審驗證（含必填 `attributes`）。
 * **Response:** 更新後的題目完整資訊（含最新的 `reviewLogs`）。
 
 ### 3. 多媒體素材

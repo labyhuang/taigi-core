@@ -23,6 +23,25 @@ export default function MainLayout() {
       items.push({ key: '/questions', label: '題庫管理' })
     }
 
+    if (user?.permissions.includes(PermissionAction.EXAM_READ)) {
+      items.push(
+        { key: '/admin/blueprints', label: '組卷藍圖' },
+        { key: '/admin/papers', label: '考卷管理' },
+      )
+    }
+
+    if (user?.permissions.includes(PermissionAction.EXAM_SESSION_READ)) {
+      items.push({ key: '/admin/exam-sessions', label: '考期管理' })
+    }
+
+    if (user?.permissions.includes(PermissionAction.QUESTION_READ)) {
+      items.push({ key: '/statistics/explore', label: '統計探索' })
+    }
+
+    if (user?.permissions.includes(PermissionAction.API_CLIENT_MANAGE)) {
+      items.push({ key: '/admin/api-clients', label: 'API Client' })
+    }
+
     if (user?.permissions.includes(PermissionAction.USER_LIST)) {
       items.push({ key: '/admin/users', label: '帳號管理' })
     }

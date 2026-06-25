@@ -91,6 +91,34 @@ export interface ApiErrorResponse {
 | `ERR_PAPER_ALREADY_PUBLISHED` | 403 | 已發布的考卷不可再修改或刪除 |
 | `ERR_QUESTION_ALREADY_IN_PAPER` | 409 | 替換的目標題目已存在於該考卷中 |
 
+### 試卷輸出類（[spec-export.md](./spec-export.md)）
+
+| Error Code | HTTP Status | 說明 |
+|------------|-------------|------|
+| `ERR_MEDIA_MISSING` | 409 | 試卷打包時，部分題目參照的媒體檔案不存在或已刪除 |
+| `ERR_PAPER_HAS_NO_QUESTIONS` | 400 | 嘗試輸出沒有任何題目的考卷 |
+
+### 考期與匯入類（[spec-exam-session.md](./spec-exam-session.md)）
+
+| Error Code | HTTP Status | 說明 |
+|------------|-------------|------|
+| `ERR_EXAM_SESSION_LOCKED` | 403 | 場次已 IMPORTED 或 ARCHIVED，禁止此修改 |
+| `ERR_EXAM_SESSION_PAPER_MISMATCH` | 400 | 綁定的 paper 與 session examCategory 不符 |
+| `ERR_PAPER_VARIANT_DUPLICATE` | 409 | 同一 session 內同 paperVariant 已綁定 |
+| `ERR_IMPORT_FORMAT_INVALID` | 400 | CSV/JSON 格式錯誤（缺欄位、無法解析） |
+| `ERR_IMPORT_CANDIDATE_NOT_FOUND` | 400 | 匯入 responses 時參照的 externalCandidateId 不存在 |
+| `ERR_IMPORT_QUESTION_NOT_IN_PAPER` | 400 | 匯入 responses 時 questionId 不屬於 session 綁定的任何 paper |
+| `ERR_API_KEY_INVALID` | 401 | API key 無效或已撤銷 |
+| `ERR_API_CLIENT_NOT_FOUND` | 404 | API client 不存在 |
+
+### 統計類（[spec-statistics.md](./spec-statistics.md)）
+
+| Error Code | HTTP Status | 說明 |
+|------------|-------------|------|
+| `ERR_STATS_NOT_READY` | 404 | 該題目尚未計算過統計 |
+| `ERR_RECOMPUTE_JOB_NOT_FOUND` | 404 | 找不到對應的 recompute job |
+| `ERR_RECOMPUTE_IN_PROGRESS` | 409 | 已有相同 scope 的 job 在執行中（避免重複觸發） |
+
 ### 伺服器類
 
 | Error Code | HTTP Status | 說明 |

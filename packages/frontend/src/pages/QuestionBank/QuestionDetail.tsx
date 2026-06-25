@@ -105,6 +105,7 @@ export default function QuestionDetail() {
           <Title level={4} style={{ margin: 0 }}>題目詳情</Title>
         </Space>
         <Space>
+          <Button onClick={() => navigate(`/questions/${id}/stats`)}>查看統計</Button>
           {canEdit && (
             <Button onClick={() => navigate(`/questions/${id}/edit`)}>編輯</Button>
           )}
@@ -152,6 +153,13 @@ export default function QuestionDetail() {
           <Descriptions.Item label="建立時間">{new Date(question.createdAt).toLocaleString('zh-TW')}</Descriptions.Item>
           {question.isGroupParent && (
             <Descriptions.Item label="類型"><Tag color="purple">題組父題</Tag></Descriptions.Item>
+          )}
+          {question.attributes && Object.keys(question.attributes).length > 0 && (
+            <Descriptions.Item label="屬性" span={2}>
+              {Object.entries(question.attributes).map(([key, value]) => (
+                <Tag key={key}>{key}: {value}</Tag>
+              ))}
+            </Descriptions.Item>
           )}
         </Descriptions>
       </Card>

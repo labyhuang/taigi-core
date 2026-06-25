@@ -26,15 +26,40 @@ model User {
   isTwoFactorEnabled  Boolean    @default(false)
 
   // 關聯
-  roles               UserRole[]
-  questionsAuthored   Question[]          @relation("QuestionAuthor")
-  questionsReviewed   Question[]          @relation("QuestionReviewer")
-  reviewLogs          QuestionReviewLog[] @relation("ReviewLogUser")
-  mediaUploads        Media[]             @relation("MediaUploader")
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  roles                 UserRole[]
+  questionsAuthored     Question[]          @relation("QuestionAuthor")
+  questionsReviewed     Question[]          @relation("QuestionReviewer")
+  reviewLogs            QuestionReviewLog[] @relation("ReviewLogUser")
+  mediaUploads          Media[]             @relation("MediaUploader")
+  blueprintsCreated     ExamBlueprint[]     @relation("BlueprintCreator")
+  papersCreated         ExamPaper[]         @relation("PaperCreator")
+  examSessionsCreated   ExamSession[]       @relation("ExamSessionCreator")
+  apiClientsCreated     ApiClient[]         @relation("ApiClientCreator")
+  recomputeJobsCreated  RecomputeJob[]      @relation("RecomputeJobCreator")
+  auditLogs             AuditLog[]          @relation("AuditLogUser")
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   @@map("users")
+}
+
+/// Phase 6：高風險操作稽核（append-only 語意，不在應用層做 update/delete）
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?
+  action       String
+  resourceType String
+  resourceId   String?
+  metadata     Json     @default("{}")
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation("AuditLogUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
 }
 
 // --- 嚴格 RBAC 架構 ---
@@ -101,6 +126,7 @@ enum QuestionStatus {
 }
 
 enum ReviewAction {
+  CREATE
   SUBMIT
   APPROVE
   REJECT
@@ -147,6 +173,10 @@ enum TextSystem {
   @@map("text_system")
 }
 
+// 注意：attributes 欄位有手動建立的 GIN index "idx_questions_attributes"
+// （Prisma schema 不支援 USING GIN 語法，定義於 raw migration 中。
+// 對應 migration：20260430120000_restore_attributes_gin_index）
+// 修改 attributes 相關欄位時請確保 migration 不會 DROP 此 index。
 model Question {
   id             String            @id @default(uuid())
   category       ExamCategory
@@ -158,6 +188,7 @@ model Question {
 
   content        Json?
   answer         Json?
+  attributes     Json              @default("{}")
 
   // 題組關聯 (Self-reference)
   isGroupParent  Boolean           @default(false)
@@ -177,9 +208,18 @@ model Question {
   // 審核歷程
   reviewLogs     QuestionReviewLog[]
 
+  // 考卷關聯
+  paperQuestions ExamPaperQuestion[]
+
+  // 考期匯入應答（spec-exam-session.md）與 CTT 統計（spec-statistics.md）
+  candidateResponses CandidateResponse[]   @relation("QuestionResponses")
+  statistics         QuestionStatistics[]  @relation("QuestionStatistics")
+
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
+  @@index([category, type, subType, status])
+  @@index([groupId])
   @@map("questions")
 }
 
@@ -229,4 +269,335 @@ model QuestionMedia {
 
   @@id([questionId, mediaId])
   @@map("question_media")
+}
+
+// =============================================
+// 動態屬性定義 (Attribute Definition Module)
+// =============================================
+
+model AttributeDefinition {
+  id             String            @id @default(uuid())
+  key            String            @unique
+  name           String
+  description    String?
+  examCategory   ExamCategory?
+  isRequired     Boolean           @default(false)
+
+  values         AttributeValue[]
+
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@map("attribute_definitions")
+}
+
+model AttributeValue {
+  id              String              @id @default(uuid())
+  attributeId     String
+  value           String
+  label           String
+  orderIndex      Int
+
+  attribute       AttributeDefinition @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@unique([attributeId, value])
+  @@index([attributeId])
+  @@map("attribute_values")
+}
+
+// =============================================
+// 組卷模組 (Exam Assembly Module)
+// =============================================
+
+enum PaperStatus {
+  DRAFT
+  PUBLISHED
+
+  @@map("paper_status")
+}
+
+model ExamBlueprint {
+  id               String          @id @default(uuid())
+  name             String
+  examCategory     ExamCategory
+  totalQuestions   Int
+  totalScore       Float
+
+  createdById      String
+  createdBy        User            @relation("BlueprintCreator", fields: [createdById], references: [id])
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  cells            BlueprintCell[]
+  generatedPapers  ExamPaper[]
+
+  @@map("exam_blueprints")
+}
+
+model BlueprintCell {
+  id               String          @id @default(uuid())
+  blueprintId      String
+  orderIndex       Int
+
+  questionType     QuestionType
+  questionSubType  QuestionSubType
+
+  criteria         Json            @default("{}")
+
+  questionCount    Int
+  scorePerQuestion Float
+
+  blueprint        ExamBlueprint   @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
+
+  @@index([blueprintId])
+  @@map("blueprint_cells")
+}
+
+model ExamPaper {
+  id                 String        @id @default(uuid())
+  // blueprintId nullable + onDelete: SetNull：藍圖刪除後保留考卷，
+  // 仍可透過 blueprintSnapshot 追溯。詳見 spec-exam-assembly.md §第一部分 5。
+  blueprintId        String?
+  name               String
+  status             PaperStatus   @default(DRAFT)
+
+  blueprintSnapshot  Json
+
+  createdById        String
+  createdBy          User          @relation("PaperCreator", fields: [createdById], references: [id])
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  blueprint          ExamBlueprint?      @relation(fields: [blueprintId], references: [id], onDelete: SetNull)
+  questions          ExamPaperQuestion[]
+  examSessionPapers  ExamSessionPaper[]  @relation("ExamSessionPapers")
+
+  @@map("exam_papers")
+}
+
+model ExamPaperQuestion {
+  id               String          @id @default(uuid())
+  examPaperId      String
+  questionId       String
+  orderIndex       Int
+  score            Float
+
+  examPaper        ExamPaper       @relation(fields: [examPaperId], references: [id], onDelete: Cascade)
+  question         Question        @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([examPaperId, questionId])
+  @@unique([examPaperId, orderIndex])
+  @@index([examPaperId])
+  @@index([questionId])
+  @@map("exam_paper_questions")
+}
+
+// =============================================
+// 考期 / 應答匯入模組 (Exam Session & Import Module)
+// 規格詳見 specs/spec-exam-session.md
+// =============================================
+
+enum ExamSessionStatus {
+  DRAFT       // 場次建立但尚未匯入資料
+  IMPORTED    // 已匯入考生與應答資料
+  ARCHIVED    // 封存（不再列入新統計，但既有統計保留）
+
+  @@map("exam_session_status")
+}
+
+model ExamSession {
+  id            String              @id @default(uuid())
+  name          String              // e.g. "2026 春季全民台語檢定"
+  examCategory  ExamCategory        // GTPT 或 TSH
+  examDate      DateTime            // 實際考試日期
+  status        ExamSessionStatus   @default(DRAFT)
+  description   String?             // 備註
+
+  createdById   String
+  createdBy     User                @relation("ExamSessionCreator", fields: [createdById], references: [id])
+
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  papers        ExamSessionPaper[]
+  candidates    Candidate[]
+  responses     CandidateResponse[]
+  stats         QuestionStatistics[]
+  importLogs    ImportLog[]
+
+  @@index([examCategory, examDate])
+  @@map("exam_sessions")
+}
+
+model ExamSessionPaper {
+  examSessionId   String
+  examPaperId     String
+  paperVariant    String?       // 'A' / 'B' / 'C' (預留多卷版)
+  attachedAt      DateTime      @default(now())
+
+  examSession     ExamSession   @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
+  examPaper       ExamPaper     @relation("ExamSessionPapers", fields: [examPaperId], references: [id], onDelete: Restrict)
+
+  @@id([examSessionId, examPaperId])
+  @@unique([examSessionId, paperVariant])
+  @@index([examPaperId])
+  @@map("exam_session_papers")
+}
+
+model Candidate {
+  id                  String    @id @default(uuid())
+  examSessionId       String
+  externalCandidateId String    // 外部考試系統的考生編號
+
+  // 固定 demographic 欄位（hybrid 策略：常用分群欄位）
+  ageGroup            String?
+  schoolType          String?
+
+  // 彈性 demographic（其他欄位放這裡）
+  demographic         Json      @default("{}")
+
+  // 成績總覽
+  totalScore          Float?
+  paperVariant        String?
+
+  importedAt          DateTime  @default(now())
+
+  examSession         ExamSession         @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
+  responses           CandidateResponse[]
+
+  @@unique([examSessionId, externalCandidateId])
+  @@index([examSessionId, ageGroup])
+  @@index([examSessionId, schoolType])
+  @@map("candidates")
+}
+
+model CandidateResponse {
+  id                  String    @id @default(uuid())
+  examSessionId       String
+  candidateId         String
+  questionId          String
+
+  // 應答內容（依題型擇一）
+  selectedOptionId    String?   // 選擇題
+  writtenAnswer       String?   // 聽寫題
+  speakingScore       Float?    // 口說題（後補匯入）
+
+  // 評分結果
+  isCorrect           Boolean?
+  pointsEarned        Float?
+
+  importedAt          DateTime  @default(now())
+  speakingScoredAt    DateTime?
+
+  candidate           Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  question            Question     @relation("QuestionResponses", fields: [questionId], references: [id], onDelete: Restrict)
+  examSession         ExamSession  @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, questionId])
+  @@index([questionId, examSessionId])
+  @@index([examSessionId])
+  @@map("candidate_responses")
+}
+
+model ApiClient {
+  id            String    @id @default(uuid())
+  name          String
+  keyHash       String    @unique
+  scopes        String[]
+  isActive      Boolean   @default(true)
+  lastUsedAt    DateTime?
+
+  createdById   String
+  createdBy     User      @relation("ApiClientCreator", fields: [createdById], references: [id])
+
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+
+  @@map("api_clients")
+}
+
+model ImportLog {
+  id              String    @id @default(uuid())
+  examSessionId   String
+  importType      String    // 'candidates' | 'responses' | 'speaking_scores'
+  sourceFormat    String    // 'csv' | 'json'
+  actorType       String    // 'user' | 'api_client'
+  actorId         String?
+  totalRows       Int
+  inserted        Int
+  updated         Int
+  skipped         Int
+  errors          Json      @default("[]")
+  createdAt       DateTime  @default(now())
+
+  examSession     ExamSession @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
+
+  @@index([examSessionId])
+  @@map("import_logs")
+}
+
+// =============================================
+// 統計分析模組 (Statistics Module)
+// 規格詳見 specs/spec-statistics.md
+// =============================================
+
+enum RecomputeJobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+
+  @@map("recompute_job_status")
+}
+
+model QuestionStatistics {
+  id              String        @id @default(uuid())
+  questionId      String
+  examSessionId   String?       // null = 跨考期累積統計
+
+  totalAnswered   Int
+  totalCorrect    Int?          // 口說題為 null
+  highGroupSize   Int
+  lowGroupSize    Int
+
+  difficulty      Float         // P 值（口說題為平均得分率）
+  discrimination  Float?        // D 值，人數不足時為 null
+
+  optionStats     Json?         // 結構見 spec-statistics.md §3.2
+
+  // 口說題專用
+  meanScore       Float?
+  scoreStdDev     Float?
+
+  computedAt      DateTime      @default(now())
+
+  question        Question      @relation("QuestionStatistics", fields: [questionId], references: [id], onDelete: Cascade)
+  examSession     ExamSession?  @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, examSessionId])
+  @@index([examSessionId])
+  @@index([questionId])
+  @@map("question_statistics")
+}
+
+model RecomputeJob {
+  id                  String              @id @default(uuid())
+  scope               String              // 'session' | 'cumulative' | 'all'
+  examSessionId       String?
+  status              RecomputeJobStatus  @default(PENDING)
+  totalQuestions      Int                 @default(0)
+  processedQuestions  Int                 @default(0)
+  errorMessage        String?
+  startedAt           DateTime?
+  finishedAt          DateTime?
+
+  createdById         String
+  createdBy           User                @relation("RecomputeJobCreator", fields: [createdById], references: [id])
+
+  createdAt           DateTime            @default(now())
+
+  @@index([status, createdAt])
+  @@map("recompute_jobs")
 }

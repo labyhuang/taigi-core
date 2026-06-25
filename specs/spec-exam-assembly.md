@@ -1,10 +1,18 @@
 # 自動組卷與雙向細目表模組規格書 (Exam Assembly & Blueprint Spec)
 
+> **相關文件**：
+> - [spec-question-bank.md](./spec-question-bank.md)：題目資料模型
+> - [spec-export.md](./spec-export.md)：試卷產生後的輸出格式（純文字 + ZIP + 抽題策略開關）
+> - [spec-exam-session.md](./spec-exam-session.md)：考期 / 匯入 / 跨年度 paper 重用設計
+> - [spec-statistics.md](./spec-statistics.md)：基於匯入應答的 CTT 統計分析
+> - [spec-bugfixes.md](./spec-bugfixes.md)：本 spec 涉及的 P0 bugs（multi-criteria attribute、blueprintId 級聯）
+
 ## 核心技術與開發原則
 
 * **資料庫:** Prisma (PostgreSQL)。高度依賴 Prisma 對 JSONB 的查詢能力（例如使用 JSON 包含/匹配運算）來進行動態維度抽題。
 * **演算法核心:** 抽題必須具備隨機性 (Fisher-Yates Shuffle)，且必須具備「庫存不足」的防呆與警告機制。
 * **Blueprint 定位:** Blueprint 為可重複使用的組卷模板 (Template)，可隨時修改。產生考卷時，將當時的藍圖設定快照 (Snapshot) 存入 `ExamPaper.blueprintSnapshot`，以供追溯。
+* **「考過題目不再考」業務規則:** 現階段年度只考兩次，業務規則為「已被任何 PUBLISHED 考卷使用過的題目不再被抽出」。本 spec 第二部分 §2 / §4 描述此邏輯實作（`excludeUsedQuestions` 開關，預設 true）。未來開放隨到隨考時可關閉此開關。
 
 ---
 
@@ -110,11 +118,13 @@ DRAFT ──(PUBLISH)──> PUBLISHED（不可逆）
 ```prisma
 model ExamPaper {
   id                 String        @id @default(uuid())
-  blueprintId        String
+  // blueprintId 可為 null：若藍圖被刪除，此欄位自動 SetNull，但考卷仍保留並可透過
+  // blueprintSnapshot 追溯原始設定。
+  blueprintId        String?
   name               String        // 考卷名稱 (e.g., "2026春季 TSH 模擬考-A卷")
   status             PaperStatus   @default(DRAFT)
 
-  // ⭐️ 藍圖快照：記錄產生此考卷時的藍圖完整設定
+  // ⭐️ 藍圖快照：記錄產生此考卷時的藍圖完整設定（即使 blueprintId 後續為 null 仍保留）
   blueprintSnapshot  Json
 
   createdById        String
@@ -123,12 +133,15 @@ model ExamPaper {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
-  blueprint          ExamBlueprint @relation(fields: [blueprintId], references: [id])
-  questions          ExamPaperQuestion[]
+  blueprint            ExamBlueprint?       @relation(fields: [blueprintId], references: [id], onDelete: SetNull)
+  questions            ExamPaperQuestion[]
+  examSessionPapers    ExamSessionPaper[]   @relation("ExamSessionPapers")  // 對應 spec-exam-session.md
 
   @@map("exam_papers")
 }
 ```
+
+> **重要：** `blueprintId` 必須為 nullable + `onDelete: SetNull`。原因：藍圖可被刪除，但歷史考卷不能被連帶刪除（影響統計與歸檔）。具體情境見 [spec-bugfixes.md](./spec-bugfixes.md)。
 
 `blueprintSnapshot` 結構範例：
 
@@ -244,11 +257,52 @@ model User {
   * `subType` === cell.questionSubType
   * `status` === `APPROVED`（絕對不可抽出草稿或退回的題目）
   * `id` NOT IN `usedQuestionIds`（排除已被其他 Cell 抽走的題目）
-  * `attributes` 包含 `cell.criteria` 內定義的所有 Key-Value（利用 Prisma 針對 JSONB 的過濾功能，或 PostgreSQL 的 `@>` 運算子）。`criteria` 中的 key 必須是 `AttributeDefinition.key` 的合法值，value 必須是對應 `AttributeValue.value` 的合法值。
+  * `attributes` 包含 `cell.criteria` 內定義的所有 Key-Value（multi-criteria 必須**全部 AND 滿足**，不可只滿足最後一筆——詳見 [spec-bugfixes.md §3](./spec-bugfixes.md#3-bug-2generatepaper-multi-criteria-attribute-%E9%81%8E%E6%BF%BE%E8%A2%AB%E8%A6%86%E8%93%8B)）。
+  * **【可選】** `excludeUsedQuestions = true` 時：題目不得屬於任何 `PUBLISHED` 狀態的考卷（透過 `paperQuestions.none.examPaper.status === 'PUBLISHED'`）。預設為 true（業務規則「考過題目不再考」），由 `POST /api/blueprints/:id/generate` 的 request body 透傳。
 
 * **題組型題目特殊查詢（COMPREHENSION、SPEECH 等）：**
   * 查詢時加上 `isGroupParent: true`，僅匹配父題
   * `questionCount` 計算的是**父題數量**，非子題數量
+  * 注意：`TSH_COMPREHENSION` 雖名稱含 COMPREHENSION，但 spec 規定為**單題類型**（非題組），實作上不可誤判為 group type。
+
+#### Step 3 範例：多 criteria 的正確寫法
+
+```typescript
+import type { Prisma } from '../../generated/prisma/index.js'
+
+const whereConditions: Prisma.QuestionWhereInput = {
+  category: blueprint.examCategory,
+  type: cell.questionType,
+  subType: cell.questionSubType,
+  status: 'APPROVED',
+  id: { notIn: [...usedQuestionIds] },
+}
+
+// ✅ DO：multi-criteria 用 AND 陣列展開
+if (criteria && Object.keys(criteria).length > 0) {
+  whereConditions.AND = Object.entries(criteria).map(([key, value]) => ({
+    attributes: { path: [key], equals: value },
+  }))
+}
+
+// ✅ DO：可選的 PUBLISHED 排除規則
+if (excludeUsedQuestions) {
+  whereConditions.paperQuestions = {
+    none: { examPaper: { status: 'PUBLISHED' } },
+  }
+}
+```
+
+```typescript
+// ❌ DON'T：用 spread 嘗試合併會被覆蓋
+for (const [key, value] of Object.entries(criteria)) {
+  whereConditions.attributes = {
+    ...((whereConditions.attributes as Record<string, unknown>) ?? {}),
+    path: [key],
+    equals: value,  // 上一輪迴圈設的 path/equals 會被本輪覆蓋
+  }
+}
+```
 
 **Step 4: 洗牌與抽取 (Fisher-Yates Shuffle)**
 
@@ -372,7 +426,7 @@ model User {
 #### 1.5 刪除藍圖 `DELETE /api/blueprints/:id`
 
 * **權限:** `exam:delete`
-* **邏輯:** 藍圖刪除時，因 `BlueprintCell` 設定 `onDelete: Cascade` 會自動刪除。已產生的 `ExamPaper` 保留（`blueprintId` 欄位值保留，但藍圖已不存在；考卷仍可透過 `blueprintSnapshot` 追溯原始設定）。
+* **邏輯:** 藍圖刪除時，因 `BlueprintCell` 設定 `onDelete: Cascade` 會自動刪除。已產生的 `ExamPaper.blueprintId` 透過 `onDelete: SetNull` 自動變為 null，考卷本身保留並可透過 `blueprintSnapshot` 追溯原始設定。
 * **Response:** `{ success: true, data: null, message: "藍圖已刪除" }`
 
 #### 1.6 自動組卷 `POST /api/blueprints/:id/generate`
@@ -382,9 +436,15 @@ model User {
 
   ```json
   {
-    "name": "2026春季 TSH 模擬考-A卷"
+    "name": "2026春季 TSH 模擬考-A卷",
+    "excludeUsedQuestions": true
   }
   ```
+
+  | 欄位 | 類型 | 預設 | 說明 |
+  |------|------|------|------|
+  | `name` | string | — | 考卷名稱（必填） |
+  | `excludeUsedQuestions` | boolean | `true` | 是否排除已被任何 `PUBLISHED` 考卷使用過的題目（業務規則「考過題目不再考」），未來開放隨到隨考時可關閉 |
 
 * **邏輯:** 執行第二部分描述的抽題演算法。
 * **Response:**

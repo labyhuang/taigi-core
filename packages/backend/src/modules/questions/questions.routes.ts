@@ -20,7 +20,8 @@ import {
   updateQuestionStatus,
 } from './questions.service.js'
 import { sendSuccess } from '../../utils/response.js'
-import { requirePermission } from '../../middlewares/rbacGuard.js'
+import { requireAuth, requirePermission } from '../../middlewares/rbacGuard.js'
+import { extractAuditContext, writeAuditLogSafe } from '../audit/audit.service.js'
 
 export default async function questionsRoutes(fastify: FastifyInstance) {
   // POST /api/questions — 建立題目（草稿）
@@ -59,7 +60,8 @@ export default async function questionsRoutes(fastify: FastifyInstance) {
       preHandler: [requirePermission('question:read')],
     },
     async (request, reply) => {
-      const result = await getQuestion(fastify.prisma, request.params.id)
+      const sessionUser = request.session.user!
+      const result = await getQuestion(fastify.prisma, request.params.id, sessionUser)
       return sendSuccess(reply, result)
     },
   )
@@ -93,16 +95,25 @@ export default async function questionsRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const sessionUser = request.session.user!
       await deleteQuestion(fastify.prisma, request.params.id, sessionUser)
+      const ctx = extractAuditContext(request)
+      void writeAuditLogSafe(fastify.prisma, request.log, {
+        ...ctx,
+        action: 'question.delete',
+        resourceType: 'Question',
+        resourceId: request.params.id,
+      })
       return sendSuccess(reply, null, { message: '題目已刪除' })
     },
   )
 
   // PATCH /api/questions/:id/status — 變更題目狀態
+  // Bug #3 修復 (spec-bugfixes.md §4)：route 層僅檢查登入；
+  // 細項權限 (SUBMIT / APPROVE / REJECT / ARCHIVE) 由 service 層動態檢查。
   fastify.patch<{ Params: QuestionIdParamsType; Body: UpdateQuestionStatusBodyType }>(
     '/questions/:id/status',
     {
       schema: { params: QuestionIdParams, body: UpdateQuestionStatusBody },
-      preHandler: [requirePermission('question:read')],
+      preHandler: [requireAuth()],
     },
     async (request, reply) => {
       const sessionUser = request.session.user!
@@ -114,6 +125,14 @@ export default async function questionsRoutes(fastify: FastifyInstance) {
         comment,
         sessionUser,
       )
+      const ctx = extractAuditContext(request)
+      void writeAuditLogSafe(fastify.prisma, request.log, {
+        ...ctx,
+        action: `question.status.${action}`,
+        resourceType: 'Question',
+        resourceId: request.params.id,
+        metadata: { comment: comment ?? null },
+      })
       return sendSuccess(reply, result, { message: '題目狀態已更新' })
     },
   )

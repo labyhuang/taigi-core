@@ -30,4 +30,9 @@ export const env = {
   get isProduction() {
     return this.NODE_ENV === 'production'
   },
+
+  /** 生產環境預設關閉；設為 true 則啟用 /api/docs 與 OpenAPI JSON（Phase 6） */
+  get openApiEnabled() {
+    return !this.isProduction || process.env.OPENAPI_ENABLED === 'true'
+  },
 } as const

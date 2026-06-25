@@ -14,6 +14,20 @@ import {
   RUBRIC_SUBTYPES,
 } from './questions.schema.js'
 import type { CreateQuestionBodyType, UpdateQuestionBodyType, ListQuestionsQueryType } from './questions.schema.js'
+import {
+  validateAttributesShape,
+  validateAttributesRequired,
+} from '../attributes/attributes.validation.js'
+
+// ========== Status 變更動作 → 所需權限對照表 ==========
+// Bug #3 修復 (spec-bugfixes.md §4 / spec-question-bank.md §第三部分 2.1)：
+// route 層只擋登入；實際權限由 service 層依 action 動態檢查，避免單一 permission 越權。
+const STATUS_ACTION_PERMISSION: Record<string, string> = {
+  [ReviewAction.SUBMIT]: 'question:submit',
+  [ReviewAction.APPROVE]: 'question:approve',
+  [ReviewAction.REJECT]: 'question:reject',
+  [ReviewAction.ARCHIVE]: 'system:manage',
+}
 
 // ========== 合法狀態轉換表 ==========
 
@@ -165,6 +179,7 @@ const questionListSelect = {
   textSystem: true,
   stem: true,
   status: true,
+  attributes: true,
   isGroupParent: true,
   author: { select: { id: true, name: true } },
   createdAt: true,
@@ -181,6 +196,7 @@ const questionDetailSelect = {
   status: true,
   content: true,
   answer: true,
+  attributes: true,
   isGroupParent: true,
   groupId: true,
   author: { select: { id: true, name: true } },
@@ -221,6 +237,47 @@ const questionDetailSelect = {
   updatedAt: true,
 } satisfies Prisma.QuestionSelect
 
+// ========== 權限 / 範圍判斷 helpers ==========
+
+/**
+ * Bug #4 修復 (spec-bugfixes.md §5 / spec-question-bank.md §第三部分 1.2)：
+ * 預設拒絕原則 — 純讀者（含 ASSEMBLER）只能看到 APPROVED 題目。
+ * 優先級：Admin > Reviewer > Author > 預設純讀者。
+ */
+function buildQuestionListScope(sessionUser: { id: string; permissions: string[] }): Prisma.QuestionWhereInput {
+  const perms = sessionUser.permissions
+  if (perms.includes('system:manage')) {
+    return {}
+  }
+  if (perms.includes('question:approve')) {
+    return { status: QuestionStatus.PENDING }
+  }
+  if (perms.includes('question:create')) {
+    return { authorId: sessionUser.id }
+  }
+  return { status: QuestionStatus.APPROVED }
+}
+
+/**
+ * 取得單題時的可見性檢查（Bug #4 / spec-question-bank.md §第三部分 1.3）。
+ * 不符可見性回 403 ERR_FORBIDDEN。
+ */
+function assertQuestionVisibleTo(
+  question: { status: QuestionStatus; author: { id: string } | null; authorId?: string | null },
+  sessionUser: { id: string; permissions: string[] },
+): void {
+  const perms = sessionUser.permissions
+  if (perms.includes('system:manage')) return
+
+  const authorId = question.author?.id ?? question.authorId ?? null
+
+  if (perms.includes('question:create') && authorId === sessionUser.id) return
+  if (perms.includes('question:approve') && question.status === QuestionStatus.PENDING) return
+  if (question.status === QuestionStatus.APPROVED) return
+
+  throw new AppError(403, ErrorCode.FORBIDDEN, '無權檢視此題目')
+}
+
 // ========== Service Functions ==========
 
 export async function createQuestion(
@@ -229,6 +286,8 @@ export async function createQuestion(
   authorId: string,
 ) {
   validateCategoryTypeSubType(body.category, body.type, body.subType)
+  // Bug #6 (spec-bugfixes.md §7)：建立草稿時也要驗 attributes shape，避免不合法值入庫。
+  await validateAttributesShape(prisma, body.attributes)
 
   const isGroupParent = GROUP_SUBTYPES.includes(body.subType) && !body.groupId
 
@@ -242,31 +301,44 @@ export async function createQuestion(
     }
   }
 
-  const question = await prisma.question.create({
-    data: {
-      category: body.category as any,
-      type: body.type as any,
-      subType: body.subType as any,
-      textSystem: body.textSystem as any,
-      stem: body.stem ?? null,
-      content: body.content ?? undefined,
-      answer: body.answer ?? undefined,
-      isGroupParent,
-      groupId: body.groupId ?? null,
-      authorId,
-      questionMedia: body.mediaIds?.length
-        ? {
-            create: body.mediaIds.map((m) => ({
-              mediaId: m.mediaId,
-              purpose: m.purpose,
-            })),
-          }
-        : undefined,
-    },
-    select: questionDetailSelect,
-  })
+  // Bug #7 (spec-bugfixes.md §8)：Question 與初始 ReviewLog 須原子寫入。
+  return prisma.$transaction(async (tx) => {
+    const question = await tx.question.create({
+      data: {
+        category: body.category as Prisma.QuestionCreateInput['category'],
+        type: body.type as Prisma.QuestionCreateInput['type'],
+        subType: body.subType as Prisma.QuestionCreateInput['subType'],
+        textSystem: body.textSystem as Prisma.QuestionCreateInput['textSystem'],
+        stem: body.stem ?? null,
+        content: body.content ?? undefined,
+        answer: body.answer ?? undefined,
+        attributes: (body.attributes ?? {}) as Prisma.InputJsonValue,
+        isGroupParent,
+        groupId: body.groupId ?? null,
+        authorId,
+        questionMedia: body.mediaIds?.length
+          ? {
+              create: body.mediaIds.map((m) => ({
+                mediaId: m.mediaId,
+                purpose: m.purpose,
+              })),
+            }
+          : undefined,
+      },
+      select: questionDetailSelect,
+    })
 
-  return question
+    await tx.questionReviewLog.create({
+      data: {
+        questionId: question.id,
+        userId: authorId,
+        action: ReviewAction.CREATE,
+        comment: null,
+      },
+    })
+
+    return question
+  })
 }
 
 export async function listQuestions(
@@ -278,28 +350,28 @@ export async function listQuestions(
   const pageSize = query.pageSize ?? 20
   const skip = (page - 1) * pageSize
 
-  const where: Prisma.QuestionWhereInput = {}
+  // Bug #4 修復：以「預設拒絕」的角色 scope 起手，純讀者 (ASSEMBLER) 自動只看 APPROVED。
+  const where: Prisma.QuestionWhereInput = { ...buildQuestionListScope(sessionUser) }
 
-  const permissions = sessionUser.permissions
-  const isAdmin = permissions.includes('system:manage')
-  const isReviewer = permissions.includes('question:approve')
-  const isAuthor = permissions.includes('question:create')
-
-  if (isAdmin) {
-    // Admin 無限制
-  } else if (isReviewer) {
-    where.status = QuestionStatus.PENDING
-  } else if (isAuthor) {
-    where.authorId = sessionUser.id
-  }
-
-  if (query.category) where.category = query.category as any
+  if (query.category) where.category = query.category as Prisma.QuestionWhereInput['category']
   if (query.status) {
     const statuses = query.status.split(',') as QuestionStatus[]
-    where.status = { in: statuses }
+    // 若使用者帶 status 篩選，與 scope 取交集（避免越權）：
+    // - Admin scope 無限制 → 直接覆蓋為使用者選擇
+    // - 非 Admin → 取交集，確保 status 不超出 scope 允許範圍
+    if (sessionUser.permissions.includes('system:manage')) {
+      where.status = { in: statuses }
+    } else {
+      const allowed = where.status
+      if (typeof allowed === 'string') {
+        where.status = statuses.includes(allowed) ? allowed : { in: [] }
+      } else {
+        where.status = { in: statuses }
+      }
+    }
   }
-  if (query.type) where.type = query.type as any
-  if (query.subType) where.subType = query.subType as any
+  if (query.type) where.type = query.type as Prisma.QuestionWhereInput['type']
+  if (query.subType) where.subType = query.subType as Prisma.QuestionWhereInput['subType']
   if (query.groupId) where.groupId = query.groupId
   if (query.authorId) where.authorId = query.authorId
 
@@ -326,7 +398,11 @@ export async function listQuestions(
   }
 }
 
-export async function getQuestion(prisma: PrismaClient, id: string) {
+export async function getQuestion(
+  prisma: PrismaClient,
+  id: string,
+  sessionUser: { id: string; permissions: string[] },
+) {
   const question = await prisma.question.findUnique({
     where: { id },
     select: questionDetailSelect,
@@ -335,6 +411,12 @@ export async function getQuestion(prisma: PrismaClient, id: string) {
   if (!question) {
     throw new AppError(404, ErrorCode.NOT_FOUND, '題目不存在')
   }
+
+  // Bug #4 修復：依角色檢查可見性，純讀者只能看 APPROVED。
+  assertQuestionVisibleTo(
+    { status: question.status, author: question.author },
+    sessionUser,
+  )
 
   return question
 }
@@ -371,12 +453,18 @@ export async function updateQuestion(
     validateCategoryTypeSubType(question.category, finalType, finalSubType)
   }
 
+  // Bug #6 (spec-bugfixes.md §7)：更新 attributes 時也要驗 shape。
+  if (body.attributes !== undefined) {
+    await validateAttributesShape(prisma, body.attributes)
+  }
+
   const updateData: Prisma.QuestionUpdateInput = {}
-  if (body.type !== undefined) updateData.type = body.type as any
-  if (body.subType !== undefined) updateData.subType = body.subType as any
+  if (body.type !== undefined) updateData.type = body.type as Prisma.QuestionUpdateInput['type']
+  if (body.subType !== undefined) updateData.subType = body.subType as Prisma.QuestionUpdateInput['subType']
   if (body.stem !== undefined) updateData.stem = body.stem
-  if (body.content !== undefined) updateData.content = body.content
-  if (body.answer !== undefined) updateData.answer = body.answer
+  if (body.content !== undefined) updateData.content = body.content as Prisma.InputJsonValue
+  if (body.answer !== undefined) updateData.answer = body.answer as Prisma.InputJsonValue
+  if (body.attributes !== undefined) updateData.attributes = body.attributes as Prisma.InputJsonValue
 
   if (body.mediaIds) {
     await prisma.questionMedia.deleteMany({ where: { questionId: id } })
@@ -433,6 +521,24 @@ export async function updateQuestionStatus(
   comment: string | undefined,
   sessionUser: { id: string; permissions: string[] },
 ) {
+  const reviewAction = action as ReviewAction
+  if (!Object.values(ReviewAction).includes(reviewAction)) {
+    throw new AppError(400, ErrorCode.VALIDATION, `不合法的動作: ${action}`)
+  }
+
+  // Bug #3 修復 (spec-bugfixes.md §4)：依 action 動態檢查權限。
+  // CREATE 為內部建立草稿時自動寫入的 log action，不允許從此 endpoint 觸發。
+  if (reviewAction === ReviewAction.CREATE) {
+    throw new AppError(400, ErrorCode.VALIDATION, 'CREATE 為內部動作，無法透過 status 端點觸發')
+  }
+  const requiredPerm = STATUS_ACTION_PERMISSION[reviewAction]
+  if (!requiredPerm) {
+    throw new AppError(400, ErrorCode.VALIDATION, `不合法的動作: ${action}`)
+  }
+  if (!sessionUser.permissions.includes(requiredPerm)) {
+    throw new AppError(403, ErrorCode.FORBIDDEN, `此動作需要 ${requiredPerm} 權限`)
+  }
+
   const question = await prisma.question.findUnique({
     where: { id },
     include: {
@@ -448,11 +554,6 @@ export async function updateQuestionStatus(
       '子題不可獨立變更狀態，須透過父題操作')
   }
 
-  const reviewAction = action as ReviewAction
-  if (!Object.values(ReviewAction).includes(reviewAction)) {
-    throw new AppError(400, ErrorCode.VALIDATION, `不合法的動作: ${action}`)
-  }
-
   const transitions = VALID_TRANSITIONS[question.status] ?? []
   const transition = transitions.find((t) => t.action === reviewAction)
   if (!transition) {
@@ -465,6 +566,12 @@ export async function updateQuestionStatus(
       throw new AppError(403, ErrorCode.FORBIDDEN, '您只能送審自己建立的題目')
     }
     validateSubmitStrict(question, question.questionMedia)
+    // Bug #6 (spec-bugfixes.md §7)：送審時須驗必填屬性。
+    await validateAttributesRequired(
+      prisma,
+      question.category,
+      question.attributes as Record<string, unknown> | null,
+    )
 
     if (question.isGroupParent) {
       const children = await prisma.question.findMany({
@@ -476,6 +583,11 @@ export async function updateQuestionStatus(
       }
       for (const child of children) {
         validateSubmitStrict(child, child.questionMedia)
+        await validateAttributesRequired(
+          prisma,
+          child.category,
+          child.attributes as Record<string, unknown> | null,
+        )
       }
     }
   }
@@ -520,5 +632,5 @@ export async function updateQuestionStatus(
     return result
   })
 
-  return getQuestion(prisma, updated.id)
+  return getQuestion(prisma, updated.id, sessionUser)
 }

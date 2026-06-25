@@ -206,6 +206,7 @@ export interface QuestionListItem {
   textSystem: string
   stem: string | null
   status: string
+  attributes: Record<string, string>
   isGroupParent: boolean
   author: { id: string; name: string | null }
   createdAt: string
@@ -228,6 +229,7 @@ export interface QuestionDetail {
   textSystem: string
   stem: string | null
   status: string
+  attributes: Record<string, string>
   content: MultipleChoiceContent | ImageChoiceContent | null
   answer: MultipleChoiceAnswer | DictationAnswer | SpeakingAnswer | null
   isGroupParent: boolean
@@ -256,6 +258,7 @@ export interface CreateQuestionPayload {
   answer?: MultipleChoiceAnswer | DictationAnswer | SpeakingAnswer | Record<string, never>
   mediaIds?: MediaLinkItem[]
   groupId?: string
+  attributes?: Record<string, string>
 }
 
 export interface UpdateQuestionPayload {
