@@ -105,7 +105,7 @@ export default function Explore() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Title level={3}>多維度交叉分析</Title>
+      <Title level={3} className="page-title">多維度交叉分析</Title>
 
       <Card>
         <Form layout="vertical">
@@ -183,7 +183,7 @@ export default function Explore() {
                 formatter={(v) => `${Number(v)}%`}
                 labelFormatter={(l) => `${l}`}
               />
-              <Bar dataKey="value" fill="#1677ff" />
+              <Bar dataKey="value" fill="#28A06B" />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -287,7 +287,7 @@ function HeatmapView({ data }: { data: ExploreResponse }) {
                     key={c}
                     style={{
                       ...cellStyle(),
-                      background: cell ? colorScale(cell.value) : '#fafafa',
+                      background: cell ? colorScale(cell.value) : '#f5f7f9',
                       color: cell && cell.value > 0.6 ? '#fff' : '#000',
                     }}
                   >
@@ -314,7 +314,7 @@ function HeatmapView({ data }: { data: ExploreResponse }) {
 
 function cellStyle(header = false): CSSProperties {
   return {
-    border: '1px solid #f0f0f0',
+    border: '1px solid #e6e9ed',
     padding: '6px 10px',
     textAlign: 'center' as const,
     fontWeight: header ? 600 : 400,

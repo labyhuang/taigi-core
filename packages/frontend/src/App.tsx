@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { ConfigProvider } from 'antd'
+import { ConfigProvider, theme as antdTheme } from 'antd'
 import zhTW from 'antd/locale/zh_TW'
 import { useAuthStore } from './stores/useAuthStore'
 import { fetchCsrfToken } from './utils/api'
@@ -38,7 +38,57 @@ export default function App() {
   return (
     <ConfigProvider
       locale={zhTW}
-      theme={{ token: { colorPrimary: '#83c060' } }}
+      theme={{
+        algorithm: antdTheme.defaultAlgorithm,
+        token: {
+          colorPrimary: '#28A06B',
+          colorInfo: '#28A06B',
+          colorLink: '#28A06B',
+          colorSuccess: '#28A06B',
+          colorBgLayout: '#FAFAFA',
+          colorBgContainer: '#FFFFFF',
+          colorBorder: '#E6E9ED',
+          colorText: '#16191D',
+          colorTextSecondary: '#6B7280',
+          borderRadius: 10,
+          borderRadiusLG: 12,
+          fontSize: 15,
+          fontSizeHeading3: 24,
+          fontSizeHeading4: 20,
+          fontFamily: '"Noto Sans TC", "Inter", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif',
+          controlHeight: 36,
+        },
+        components: {
+          Layout: {
+            headerBg: '#FFFFFF',
+            siderBg: '#FFFFFF',
+            bodyBg: '#FAFAFA',
+            triggerBg: '#F5F7F9',
+          },
+          Menu: {
+            itemBg: '#FFFFFF',
+            itemColor: '#454E5C',
+            itemHoverColor: '#28A06B',
+            itemSelectedBg: '#EAF6F1',
+            itemSelectedColor: '#28A06B',
+          },
+          Card: {
+            colorBorderSecondary: '#E6E9ED',
+            bodyPadding: 20,
+          },
+          Button: {
+            primaryShadow: '0 1px 4px rgba(40, 160, 107, 0.25)',
+          },
+          Table: {
+            headerBg: '#F5F7F9',
+            cellPaddingBlock: 10,
+            cellPaddingInline: 12,
+          },
+          Form: {
+            itemMarginBottom: 16,
+          },
+        },
+      }}
     >
       <BrowserRouter>
         <Routes>

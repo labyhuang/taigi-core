@@ -54,13 +54,13 @@ export default function MainLayout() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider breakpoint="lg" collapsedWidth={0}>
-        <div style={{ height: 48, margin: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Text strong style={{ color: themeToken.colorWhite, fontSize: 16 }}>TaigiCore</Text>
+    <Layout className="app-shell">
+      <Sider className="app-sider" breakpoint="lg" collapsedWidth={0}>
+        <div className="app-sider-brand">
+          <Text strong style={{ color: themeToken.colorWhite, fontSize: 16 }}>Taigi Core</Text>
         </div>
         <Menu
-          theme="dark"
+          theme="light"
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
@@ -68,14 +68,16 @@ export default function MainLayout() {
         />
       </Sider>
       <Layout>
-        <Header style={{ padding: '0 24px', background: themeToken.colorBgContainer, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <Header className="app-header">
           <Space>
             <Text>{user?.name ?? user?.email}</Text>
             <Button size="small" onClick={() => void logout()}>登出</Button>
           </Space>
         </Header>
-        <Content style={{ padding: 24 }}>
-          <Outlet />
+        <Content className="app-content">
+          <div className="page-wrap">
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     </Layout>

@@ -84,30 +84,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        backgroundImage: 'url(/login-bg.png)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundColor: 'rgba(255, 255, 255, 0.65)',
-        }}
-      />
-      <Card style={{ width: 400, position: 'relative', zIndex: 1 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Title level={3} style={{ marginBottom: 4 }}>TaigiCore</Title>
-          <Text type="secondary">台語檢定題庫管理系統</Text>
+    <div className="auth-page">
+      <Card className="auth-card">
+        <div className="centered-block" style={{ marginBottom: 32 }}>
+          <Title level={3} className="auth-card-title">TaigiCore</Title>
+          <Text type="secondary" className="auth-card-subtitle">台語檢定題庫管理系統</Text>
         </div>
 
         {stage === 'credentials' ? (
@@ -127,14 +108,7 @@ export default function LoginPage() {
             <Text style={{ display: 'block', textAlign: 'center', marginBottom: 24 }}>
               請開啟驗證器應用程式，輸入 6 位數驗證碼
             </Text>
-            <div ref={otpRef} className="login-otp-wrap" style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-              <style>{`
-                .login-otp-wrap .ant-input-otp-input {
-                  width: 48px !important;
-                  height: 48px !important;
-                  font-size: 24px !important;
-                }
-              `}</style>
+            <div ref={otpRef} className="otp-wrap">
               <Input.OTP
                 length={6}
                 size="large"

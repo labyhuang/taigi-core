@@ -1,0 +1,223 @@
+:root {
+  --tg-primary: #28a06b;
+  --tg-primary-hover: #1e8f5e;
+  --tg-primary-active: #177a50;
+  --tg-primary-soft: #eaf6f1;
+
+  --tg-bg: #fafafa;
+  --tg-surface: #ffffff;
+  --tg-surface-muted: #f5f7f9;
+  --tg-border: #e6e9ed;
+  --tg-border-strong: #dfe5eb;
+
+  --tg-text: #16191d;
+  --tg-text-muted: #6b7280;
+  --tg-danger: #cf1322;
+
+  --tg-radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  font-family: "Noto Sans TC", "Inter", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+
+.app-loading-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-sider {
+  background: var(--tg-surface) !important;
+  border-right: 1px solid var(--tg-border);
+}
+
+.app-sider-brand {
+  height: 52px;
+  margin: 16px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1f8b5b, #28a06b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-header {
+  border-bottom: 1px solid var(--tg-border);
+  padding: 0 24px !important;
+  background: var(--tg-surface) !important;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.app-content {
+  padding: 28px !important;
+  background: var(--tg-bg);
+}
+
+.page-wrap {
+  max-width: 1200px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.page-title {
+  margin: 0 !important;
+}
+
+.page-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.content-narrow {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.card-stack > .ant-card {
+  margin-bottom: 16px;
+}
+
+.card-stack > .ant-card:last-child {
+  margin-bottom: 0;
+}
+
+.auth-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background-image: url("/login-bg.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.auth-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(145deg, rgba(18, 70, 48, 0.56), rgba(12, 40, 28, 0.64));
+}
+
+.auth-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  border: 1px solid var(--tg-border) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(22, 25, 29, 0.15);
+}
+
+.setup-card {
+  max-width: 520px;
+}
+
+.auth-card-title {
+  text-align: center;
+  margin-bottom: 4px !important;
+}
+
+.auth-card-subtitle {
+  display: block;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.otp-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.otp-wrap .ant-input-otp-input {
+  width: 48px !important;
+  height: 48px !important;
+  font-size: 24px !important;
+}
+
+.otp-wrap--setup .ant-input-otp-input {
+  width: 44px !important;
+  height: 44px !important;
+  font-size: 22px !important;
+}
+
+.centered-block {
+  text-align: center;
+}
+
+.surface-soft {
+  background: var(--tg-surface-muted);
+  border: 1px solid var(--tg-border);
+  border-radius: 8px;
+}
+
+.ant-layout {
+  background: var(--tg-bg);
+}
+
+.ant-menu-light.ant-menu-inline .ant-menu-item-selected {
+  background: var(--tg-primary-soft);
+  color: var(--tg-primary);
+  font-weight: 600;
+}
+
+.ant-menu-light.ant-menu-inline .ant-menu-item:hover {
+  color: var(--tg-primary);
+}
+
+.ant-card {
+  border-radius: var(--tg-radius);
+}
+
+.ant-card .ant-card-head-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ant-table-wrapper .ant-table {
+  border: 1px solid var(--tg-border);
+  border-radius: 10px;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: var(--tg-surface-muted) !important;
+}
+
+.ant-typography h1,
+.ant-typography h2,
+.ant-typography h3,
+.ant-typography h4 {
+  letter-spacing: -0.01em;
+}

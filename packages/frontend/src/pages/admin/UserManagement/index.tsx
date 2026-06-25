@@ -228,8 +228,8 @@ export default function UserManagement() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>帳號管理</Title>
+      <div className="page-header">
+        <Title level={3} className="page-title">帳號管理</Title>
         {canInvite && (
           <Button type="primary" onClick={() => setInviteOpen(true)}>邀請新帳號</Button>
         )}

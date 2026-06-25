@@ -12,7 +12,7 @@ export function ProtectedRoute({ requiredPermission }: ProtectedRouteProps) {
 
   if (isCheckingAuth) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <div className="app-loading-screen">
         <Spin size="large" />
       </div>
     )

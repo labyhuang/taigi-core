@@ -144,8 +144,8 @@ export default function QuestionList() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>題庫管理</Title>
+      <div className="page-header">
+        <Title level={3} className="page-title">題庫管理</Title>
         {canCreate && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/questions/create')}>
             新增試題
@@ -153,7 +153,7 @@ export default function QuestionList() {
         )}
       </div>
 
-      <Space wrap style={{ marginBottom: 16 }}>
+      <Space wrap className="page-filters">
         <Select
           allowClear
           placeholder="考試類型"

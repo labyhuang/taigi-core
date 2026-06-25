@@ -34,7 +34,7 @@ export function DistractorChart({ options, height = 280 }: Props) {
         <YAxis tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
         <Tooltip formatter={(v) => `${Number(v)}%`} />
         <Legend />
-        <Bar dataKey="high" name="高分組選擇率" fill="#1677ff" />
+        <Bar dataKey="high" name="高分組選擇率" fill="#28A06B" />
         <Bar dataKey="low" name="低分組選擇率" fill="#ff7875" />
       </BarChart>
     </ResponsiveContainer>

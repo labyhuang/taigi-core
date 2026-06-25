@@ -413,8 +413,10 @@ export default function QuestionForm() {
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      <Title level={4}>{isEdit ? '編輯試題' : '新增試題'}</Title>
+    <div className="content-narrow">
+      <Title level={3} className="page-title" style={{ marginBottom: 16 }}>
+        {isEdit ? '編輯試題' : '新增試題'}
+      </Title>
 
       <Form form={form} layout="vertical" requiredMark="optional">
         {/* 第一段：考試類型與基本設定 */}
@@ -570,7 +572,7 @@ export default function QuestionForm() {
                       <Form.Item name="correctOptionId" label="請點選正確答案" rules={[{ required: true, message: '請選擇正確答案' }]}>
                         <Radio.Group style={{ display: 'block' }}>
                           {fields.map((field, index) => (
-                            <div key={field.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16, padding: 12, border: '1px solid #f0f0f0', borderRadius: 8 }}>
+                            <div key={field.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16, padding: 12, border: '1px solid #e6e9ed', borderRadius: 8 }}>
                               <Radio value={watchedImageOptions?.[index]?.id ?? ''} style={{ marginTop: 4 }} />
                               <div style={{ flex: 1 }}>
                                 <div style={{ fontWeight: 'bold', marginBottom: 8 }}>選項 {String.fromCharCode(65 + index)}</div>

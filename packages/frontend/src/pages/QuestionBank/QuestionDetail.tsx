@@ -97,12 +97,12 @@ export default function QuestionDetail() {
     && (question.status === QuestionStatus.APPROVED || question.status === QuestionStatus.REJECTED)
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+    <div className="content-narrow">
       {/* 標題與操作 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="page-header">
         <Space>
           <Button onClick={() => navigate('/questions')}>返回列表</Button>
-          <Title level={4} style={{ margin: 0 }}>題目詳情</Title>
+          <Title level={3} className="page-title">題目詳情</Title>
         </Space>
         <Space>
           <Button onClick={() => navigate(`/questions/${id}/stats`)}>查看統計</Button>
@@ -116,7 +116,7 @@ export default function QuestionDetail() {
           )}
           {canApprove && (
             <Button type="primary" loading={actionLoading} onClick={() => void handleStatusAction('APPROVE')}
-              style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}>
+              style={{ backgroundColor: '#28A06B', borderColor: '#28A06B' }}>
               核可入庫
             </Button>
           )}
@@ -133,8 +133,9 @@ export default function QuestionDetail() {
         </Space>
       </div>
 
-      {/* 基本資訊 */}
-      <Card style={{ marginBottom: 16 }}>
+      <div className="card-stack">
+        {/* 基本資訊 */}
+        <Card>
         <Descriptions column={2}>
           <Descriptions.Item label="考試類型">
             <Tag color={question.category === 'TSH' ? 'orange' : 'blue'}>
@@ -162,10 +163,10 @@ export default function QuestionDetail() {
             </Descriptions.Item>
           )}
         </Descriptions>
-      </Card>
+        </Card>
 
-      {/* 預覽區 */}
-      <Card title="題目預覽" style={{ marginBottom: 16 }}>
+        {/* 預覽區 */}
+        <Card title="題目預覽">
         {/* 媒體 */}
         {question.questionMedia.length > 0 && (
           <div style={{ marginBottom: 16 }}>
@@ -255,12 +256,13 @@ export default function QuestionDetail() {
             <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{(question.answer as MultipleChoiceAnswer).transcript}</Paragraph>
           </div>
         )}
-      </Card>
+        </Card>
 
-      {/* 審查歷程 */}
-      <Card title="審查歷程">
-        <ReviewTimeline logs={question.reviewLogs} />
-      </Card>
+        {/* 審查歷程 */}
+        <Card title="審查歷程">
+          <ReviewTimeline logs={question.reviewLogs} />
+        </Card>
+      </div>
 
       {/* 退回 Modal */}
       <Modal
@@ -330,7 +332,7 @@ function renderImageOptions(
             <div
               key={opt.id}
               style={{
-                border: isCorrect ? '2px solid #52c41a' : '1px solid #d9d9d9',
+                border: isCorrect ? '2px solid #28A06B' : '1px solid #dfe5eb',
                 borderRadius: 8,
                 padding: 12,
                 textAlign: 'center',
@@ -350,11 +352,11 @@ function renderImageOptions(
                   fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjYWFhIj7lnJbniYc8L3RleHQ+PC9zdmc+"
                 />
               ) : (
-                <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa', borderRadius: 4 }}>
-                  <PictureOutlined style={{ fontSize: 32, color: '#ccc' }} />
+                <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f7f9', borderRadius: 4 }}>
+                  <PictureOutlined style={{ fontSize: 32, color: '#9ca3af' }} />
                 </div>
               )}
-              {opt.text && <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>{opt.text}</div>}
+              {opt.text && <div style={{ marginTop: 4, color: '#6b7280', fontSize: 12 }}>{opt.text}</div>}
             </div>
           )
         })}

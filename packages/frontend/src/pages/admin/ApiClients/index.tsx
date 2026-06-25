@@ -298,7 +298,7 @@ export default function ApiClientManagement() {
                 style={{
                   fontFamily: 'ui-monospace, Menlo, monospace',
                   fontSize: 12,
-                  background: '#fafafa',
+                  background: '#f5f7f9',
                   padding: 12,
                   borderRadius: 4,
                   wordBreak: 'break-all',

@@ -113,7 +113,7 @@ export default function ImportHistoryTable(props: { sessionId: string; reloadKey
             dataIndex: 'updated',
             width: 70,
             align: 'center',
-            render: (n: number) => <Text style={{ color: '#1677ff' }}>{n}</Text>,
+            render: (n: number) => <Text style={{ color: '#28A06B' }}>{n}</Text>,
           },
           {
             title: '跳過',

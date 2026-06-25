@@ -143,7 +143,7 @@ export default function QuestionStats() {
       <Card
         title={
           <Space>
-            <Title level={4} style={{ margin: 0 }}>
+            <Title level={4} className="page-title">
               {data.question.stem ?? '（無題幹）'}
             </Title>
             <Tag>{data.question.subType}</Tag>
@@ -230,7 +230,7 @@ export default function QuestionStats() {
                 type="monotone"
                 dataKey="difficulty"
                 name="難度 P"
-                stroke="#1677ff"
+                stroke="#28A06B"
               />
               <Line
                 type="monotone"

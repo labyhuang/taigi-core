@@ -113,7 +113,7 @@ export default function SetupWizard() {
   if (loading && currentStep === 0) {
     return (
       <CenteredCard>
-        <div style={{ textAlign: 'center', padding: 48 }}>
+        <div className="centered-block" style={{ padding: 48 }}>
           <Spin size="large" />
           <Text style={{ display: 'block', marginTop: 16 }}>驗證邀請連結中...</Text>
         </div>
@@ -123,7 +123,7 @@ export default function SetupWizard() {
 
   return (
     <CenteredCard>
-      <Title level={3} style={{ textAlign: 'center', marginBottom: 8 }}>帳號開通</Title>
+      <Title level={3} className="auth-card-title">帳號開通</Title>
       {email && <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginBottom: 24 }}>{email}</Text>}
 
       <Steps
@@ -178,7 +178,7 @@ export default function SetupWizard() {
       )}
 
       {currentStep === 2 && (
-        <div style={{ textAlign: 'center' }}>
+        <div className="centered-block">
           <Text style={{ display: 'block', marginBottom: 16 }}>
             請使用驗證器應用程式（如 Google Authenticator）掃描以下 QR Code
           </Text>
@@ -186,7 +186,7 @@ export default function SetupWizard() {
             <QRCodeSVG value={otpauthUrl} size={200} />
           </div>
           <Text style={{ display: 'block', marginBottom: 16 }}>掃描完成後，請輸入 6 位數驗證碼</Text>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div className="otp-wrap otp-wrap--setup" style={{ marginBottom: 16 }}>
             <Input.OTP
               length={6}
               onChange={(code) => {
@@ -205,8 +205,8 @@ export default function SetupWizard() {
 
 function CenteredCard({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f0f2f5' }}>
-      <Card style={{ width: 480 }}>{children}</Card>
+    <div className="auth-page">
+      <Card className="auth-card setup-card">{children}</Card>
     </div>
   )
 }

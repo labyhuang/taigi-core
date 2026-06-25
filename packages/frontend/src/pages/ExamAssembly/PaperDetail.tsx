@@ -376,7 +376,7 @@ export default function PaperDetail() {
           className="ant-input"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          style={{ width: '100%', padding: '8px 12px', border: '1px solid #d9d9d9', borderRadius: 6 }}
+          style={{ width: '100%', padding: '8px 12px', border: '1px solid #dfe5eb', borderRadius: 6 }}
         />
       </Modal>
 
@@ -415,7 +415,7 @@ export default function PaperDetail() {
               style={{
                 maxHeight: '60vh',
                 overflow: 'auto',
-                background: '#fafafa',
+                background: '#f5f7f9',
                 padding: 16,
                 borderRadius: 4,
                 fontFamily:

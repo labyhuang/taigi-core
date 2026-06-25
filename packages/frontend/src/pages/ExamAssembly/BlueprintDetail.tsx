@@ -243,7 +243,7 @@ export default function BlueprintDetail() {
                 </div>
               }
             >
-              <QuestionCircleOutlined style={{ marginLeft: 6, color: '#999' }} />
+              <QuestionCircleOutlined style={{ marginLeft: 6, color: '#6b7280' }} />
             </Tooltip>
             {!excludeUsedQuestions && (
               <div style={{ marginTop: 6 }}>

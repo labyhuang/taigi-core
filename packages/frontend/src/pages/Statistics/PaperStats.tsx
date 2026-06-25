@@ -117,7 +117,7 @@ export default function PaperStats() {
       <Card
         title={
           <Space>
-            <Title level={4} style={{ margin: 0 }}>
+            <Title level={4} className="page-title">
               {paper.name}
             </Title>
             {paper.status && <Tag color="blue">{paper.status}</Tag>}

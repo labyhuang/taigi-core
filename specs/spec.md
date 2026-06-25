@@ -33,6 +33,23 @@
 * **HTTP Client:** Axios（統一封裝攔截器）
 * **資安架構:** 採用 HttpOnly Cookie (Redis Session) + CSRF Token，不使用 JWT，不可將任何 Token 存入 `localStorage`。
 
+### 3.1.1 UI 風格參考基準
+
+前端視覺風格請參考專案：`/Users/laby/code/taigi/taigi-lang-score`。
+
+請沿用其整體設計語言並映射到 React + Ant Design：
+
+* 主色為 teal-green 系：`#28A06B`（hover `#1e8f5e`）。
+* 背景與卡片層次：頁面底色偏淺灰（如 `#FAFAFA`），卡片為白底 + 淺邊框（如 `#E6E9ED`）。
+* 元件語彙：以圓角卡片（約 8px~12px）與輕陰影建立資訊層次，避免過重陰影。
+* 資訊色調：文字主色偏深灰黑（如 `#16191D`），次要文字使用 muted gray。
+* 登入頁語彙：可使用背景圖 + 深綠漸層遮罩 + 中央登入卡片的結構。
+
+實作要求：
+
+* 優先以全域 Theme Token / CSS Variables 萃取上述色彩與圓角，不在頁面內硬編碼重複色票。
+* 新頁面與既有頁面需維持同一視覺語言，不採用與參考專案衝突的高飽和或多主色風格。
+
 ### 3.2 API Client 與攔截器 (`src/utils/api.ts`)
 
 * 使用獨立 Axios instance，設定 `withCredentials: true`。
